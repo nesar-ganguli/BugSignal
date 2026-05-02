@@ -1,0 +1,41 @@
+ticket_id,title,body,created_at,customer_plan,severity,source
+TCK-1001,Checkout spinner after login expires,"Checkout keeps spinning after my session expires. I expected to be asked to sign in again, but the pay button never finishes.",2026-04-20T10:15:00Z,Pro,high,email
+TCK-1002,Checkout hangs after idle cart,"I left my cart open, came back later, and checkout froze on submit. No error message, just a loading state.",2026-04-20T11:02:00Z,Business,high,web
+TCK-1003,Expired session breaks payment submit,"When my session times out, retrying checkout does not redirect to login. It just hangs forever.",2026-04-20T13:40:00Z,Pro,medium,email
+TCK-1004,Payment page stuck after timeout,"The checkout page gets stuck if I was inactive first. Refreshing makes me log in again, but the original payment attempt never completes.",2026-04-21T09:22:00Z,Enterprise,high,web
+TCK-1005,Checkout loading forever,"Checkout loads forever after I return to an old cart. Expected session refresh or clear error.",2026-04-21T14:18:00Z,Business,medium,chat
+TCK-1006,Session expiry causes checkout freeze,"Users report the final checkout button freezes after auth expires during cart review.",2026-04-22T08:51:00Z,Enterprise,high,email
+TCK-1007,Password reset email missing,"I requested a password reset three times and never received the email. I checked spam.",2026-04-20T15:05:00Z,Free,medium,web
+TCK-1008,Reset link not arriving,"Forgot password says email sent, but nothing arrives for our team accounts.",2026-04-20T16:30:00Z,Business,medium,email
+TCK-1009,Cannot reset password,"The reset password email is not showing up. Expected a link within a few minutes.",2026-04-21T12:12:00Z,Pro,high,chat
+TCK-1010,Password email delivery issue,"Several users cannot log in because password reset messages never arrive.",2026-04-21T16:45:00Z,Enterprise,high,email
+TCK-1011,Forgot password says sent but no email,"Forgot password confirmation appears, but no reset link comes through.",2026-04-22T10:11:00Z,Free,medium,web
+TCK-1012,Reset email delayed or lost,"Password reset emails seem missing for our domain. We need account access restored urgently.",2026-04-22T11:03:00Z,Business,high,email
+TCK-1013,Uploaded file vanishes after refresh,"I uploaded a PDF and saw it in the list, but after refreshing the page it disappeared.",2026-04-20T09:44:00Z,Pro,high,web
+TCK-1014,Attachment disappears,"Files show as uploaded until I reload. Then the attachment is gone from the project.",2026-04-20T14:04:00Z,Business,high,email
+TCK-1015,Document not saved after reload,"The upload completed message appeared, but my document was missing after refresh.",2026-04-21T08:19:00Z,Enterprise,high,chat
+TCK-1016,Lost uploaded file,"Our uploaded CSV disappeared after navigating away and coming back.",2026-04-21T17:26:00Z,Pro,medium,web
+TCK-1017,Upload does not persist,"Uploaded files are visible temporarily but not persisted after page reload.",2026-04-22T13:37:00Z,Business,high,email
+TCK-1018,File gone from workspace,"A spreadsheet upload vanished after refresh. This looks like data loss.",2026-04-22T15:50:00Z,Enterprise,critical,email
+TCK-1019,Dashboard slow for large account,"The dashboard takes almost a minute to load for our account with many projects.",2026-04-20T10:57:00Z,Enterprise,medium,web
+TCK-1020,Analytics dashboard timing out,"Dashboard widgets load very slowly for a large workspace. Some charts never finish.",2026-04-20T12:36:00Z,Business,medium,email
+TCK-1021,Home dashboard performance problem,"Our dashboard is painfully slow since adding more users and projects.",2026-04-21T10:48:00Z,Enterprise,medium,chat
+TCK-1022,Dashboard hangs with many records,"Large accounts see the dashboard hang while smaller accounts load fine.",2026-04-21T13:59:00Z,Enterprise,high,email
+TCK-1023,Slow dashboard load,"It takes 45 seconds before dashboard data appears. Expected under a few seconds.",2026-04-22T09:12:00Z,Pro,medium,web
+TCK-1024,Reports dashboard stuck loading,"Dashboard reports keep spinning for our largest customer account.",2026-04-22T12:21:00Z,Enterprise,high,email
+TCK-1025,Duplicate charge after retry,"Checkout failed once, I retried, and my card was charged twice.",2026-04-20T18:02:00Z,Pro,critical,email
+TCK-1026,Charged twice on payment retry,"The first payment attempt looked failed, but retrying caused two charges.",2026-04-21T09:05:00Z,Business,critical,web
+TCK-1027,Duplicate billing after error,"Payment showed an error so we tried again. Now there are two successful charges.",2026-04-21T11:17:00Z,Enterprise,critical,email
+TCK-1028,Retry payment creates duplicate charge,"Retrying after the payment timeout produced duplicate billing.",2026-04-21T15:43:00Z,Pro,critical,chat
+TCK-1029,Two invoices for one checkout,"We received two invoices after clicking pay again when checkout failed.",2026-04-22T10:26:00Z,Business,critical,email
+TCK-1030,Double charged after retrying card,"Customer was charged twice when they retried a failed card payment.",2026-04-22T16:08:00Z,Enterprise,critical,email
+TCK-1031,Settings page broken on mobile,"On mobile, the settings save button is off screen and fields overlap.",2026-04-20T09:18:00Z,Free,low,web
+TCK-1032,Mobile settings layout overlap,"The settings page layout breaks on my phone. Labels and inputs overlap.",2026-04-20T13:10:00Z,Pro,low,email
+TCK-1033,Cannot save settings on phone,"In mobile view I cannot reach the save button on settings because the layout is cut off.",2026-04-21T08:47:00Z,Business,medium,chat
+TCK-1034,Settings responsive issue,"Settings looks fine on desktop but broken on mobile widths.",2026-04-21T14:35:00Z,Free,low,web
+TCK-1035,Mobile settings page unusable,"The settings form overlaps and the buttons are hidden on iPhone.",2026-04-22T11:49:00Z,Pro,medium,email
+TCK-1036,Settings form cropped on small screen,"Small-screen settings page crops the notification controls.",2026-04-22T14:22:00Z,Business,low,web
+TCK-1037,Checkout stale login error,"Checkout should recover when auth is stale, but instead the final step keeps loading.",2026-04-23T09:30:00Z,Enterprise,high,web
+TCK-1038,Reset password never sends,"Urgent: password reset link never reaches my inbox, blocking account access.",2026-04-23T10:16:00Z,Pro,high,email
+TCK-1039,Upload lost after browser refresh,"A file upload appears successful but disappears after browser refresh.",2026-04-23T11:04:00Z,Business,high,chat
+TCK-1040,Duplicate payment on retry,"Payment retry created a second charge for the same order.",2026-04-23T12:41:00Z,Enterprise,critical,email
