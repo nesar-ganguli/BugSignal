@@ -1,6 +1,8 @@
 .env
 *.db
+*.db-journal
 *.sqlite
+*.sqlite-journal
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -8,7 +10,9 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+backend/.data_backups/
 chroma_data/
+repos/
 
 node_modules/
 dist/

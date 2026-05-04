@@ -14,13 +14,14 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./bugsignal.db"
     chroma_persist_dir: str = "./chroma_data"
+    cloned_repos_dir: str = "./repos"
 
     github_token: str | None = Field(default=None)
     github_repo_owner: str | None = Field(default=None)
     github_repo_name: str | None = Field(default=None)
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,6 +25,13 @@ class Ticket(Base):
     extracted_feature_area: Mapped[str | None] = mapped_column(String(200), nullable=True)
     extracted_error_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    contains_payment_or_revenue_issue: Mapped[bool] = mapped_column(Boolean, default=False)
+    contains_data_loss_issue: Mapped[bool] = mapped_column(Boolean, default=False)
+    contains_auth_issue: Mapped[bool] = mapped_column(Boolean, default=False)
+    contains_performance_issue: Mapped[bool] = mapped_column(Boolean, default=False)
+    extraction_status: Mapped[str] = mapped_column(String(40), default="pending")
+    extracted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     cluster_id: Mapped[int | None] = mapped_column(ForeignKey("clusters.id"), nullable=True)
 
@@ -40,6 +47,7 @@ class Cluster(Base):
     ticket_count: Mapped[int] = mapped_column(Integer, default=0)
     priority_score: Mapped[float] = mapped_column(Float, default=0)
     priority_label: Mapped[str] = mapped_column(String(80), default="P3 Low")
+    priority_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence_score: Mapped[float] = mapped_column(Float, default=0)
     cohesion_score: Mapped[float] = mapped_column(Float, default=0)
     llm_coherence_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -60,9 +68,11 @@ class CodeChunk(Base):
     language: Mapped[str] = mapped_column(String(80))
     chunk_text: Mapped[str] = mapped_column(Text)
     function_or_class_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    chunk_type: Mapped[str] = mapped_column(String(80), default="code")
     start_line: Mapped[int] = mapped_column(Integer)
     end_line: Mapped[int] = mapped_column(Integer)
     embedding_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class RetrievedEvidence(Base):
@@ -86,5 +96,6 @@ class IssueDraft(Base):
     priority_label: Mapped[str] = mapped_column(String(80))
     confidence_level: Mapped[str] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(80), default="draft")
+    warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
     github_issue_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

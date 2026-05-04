@@ -3,7 +3,11 @@ import { FileUp, Loader2, Upload } from "lucide-react";
 
 import { uploadTickets, UploadTicketsResponse } from "../api/client";
 
-export function TicketUpload() {
+type TicketUploadProps = {
+  onUploaded?: (result: UploadTicketsResponse) => void;
+};
+
+export function TicketUpload({ onUploaded }: TicketUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [result, setResult] = useState<UploadTicketsResponse | null>(null);
@@ -24,7 +28,9 @@ export function TicketUpload() {
     setResult(null);
 
     try {
-      setResult(await uploadTickets(file));
+      const uploadResult = await uploadTickets(file);
+      setResult(uploadResult);
+      onUploaded?.(uploadResult);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
@@ -79,7 +85,13 @@ export function TicketUpload() {
 
       {result ? (
         <div className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {result.message} Received {result.bytes_received.toLocaleString()} bytes.
+          {result.message} Total tickets: {result.total_tickets.toLocaleString()}.
+        </div>
+      ) : null}
+
+      {result?.errors.length ? (
+        <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {result.skipped} row{result.skipped === 1 ? "" : "s"} skipped. First issue: {result.errors[0]}
         </div>
       ) : null}
 
