@@ -1,14 +1,10 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.database import get_db
 from app.repositories.ticket_repository import (
-    apply_ticket_extraction,
     count_tickets,
     list_tickets,
-    list_tickets_for_extraction,
-    mark_ticket_extraction_failed,
     upsert_ticket,
 )
 from app.schemas.ticket_schema import (
@@ -17,12 +13,9 @@ from app.schemas.ticket_schema import (
     TicketRead,
     TicketUploadResponse,
 )
-from app.services.llm_client import LLMClient, LLMResponseError, LLMUnavailableError
+from app.services.llm_client import LLMUnavailableError
 from app.services.ticket_csv_service import parse_ticket_csv
-from app.services.ticket_extraction_service import TicketExtractionError, extract_ticket_fields
-from app.services.cluster_workflow_service import rebuild_ticket_clusters
-from app.services.clustering_service import ClusteringDependencyError
-from app.services.embedding_service import EmbeddingDependencyError
+from app.services.ticket_processing_service import process_ticket_batch
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -85,58 +78,8 @@ async def process_tickets(
     limit: int = Query(default=20, ge=1, le=100),
     force: bool = Query(default=False),
 ) -> TicketProcessResponse:
-    settings = get_settings()
-    llm_client = LLMClient(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        timeout_seconds=90,
-    )
-
-    tickets = list_tickets_for_extraction(db, limit=limit, force=force)
-    processed = 0
-    errors: list[str] = []
-
-    for ticket in tickets:
-        try:
-            extraction = await extract_ticket_fields(ticket, llm_client)
-        except LLMUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except (LLMResponseError, TicketExtractionError) as exc:
-            error_message = str(exc)
-            mark_ticket_extraction_failed(ticket, error_message)
-            errors.append(error_message)
-            continue
-
-        apply_ticket_extraction(ticket, extraction)
-        processed += 1
-
-    db.commit()
-
-    remaining_message = "Extraction complete for this batch."
-    if not tickets:
-        remaining_message = "No tickets need extraction."
-
-    clusters_created = 0
-    clustered_tickets = 0
-    outlier_tickets = 0
-    if processed or not tickets:
-        try:
-            cluster_result = rebuild_ticket_clusters(db)
-        except (EmbeddingDependencyError, ClusteringDependencyError) as exc:
-            errors.append(str(exc))
-        else:
-            clusters_created = cluster_result.clusters_created
-            clustered_tickets = cluster_result.clustered_tickets
-            outlier_tickets = cluster_result.outlier_tickets
-            remaining_message = f"{remaining_message} {cluster_result.message}"
-
-    return TicketProcessResponse(
-        processed=processed,
-        failed=len(errors),
-        total_tickets=count_tickets(db),
-        clusters_created=clusters_created,
-        clustered_tickets=clustered_tickets,
-        outlier_tickets=outlier_tickets,
-        message=remaining_message,
-        errors=errors,
-    )
+    """Legacy synchronous endpoint. Prefer POST /workflows/ticket-processing."""
+    try:
+        return await process_ticket_batch(db, limit=limit, force=force)
+    except LLMUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -3,6 +3,7 @@ import { Activity, AlertCircle, Boxes, ListChecks, Loader2, RefreshCw, WandSpark
 
 import {
   approveIssue,
+  cancelWorkflow,
   Cluster,
   CodebaseStatusResponse,
   ClusterDetailResponse,
@@ -11,11 +12,14 @@ import {
   getClusterDetail,
   getClusters,
   getHealth,
+  getWorkflow,
+  getWorkflows,
   getTickets,
   HealthResponse,
   processTickets,
   retrieveCodeForCluster,
   Ticket,
+  WorkflowRun,
 } from "../api/client";
 import { ClusterList } from "../components/ClusterList";
 import { ClusterDetail } from "../components/ClusterDetail";
@@ -59,6 +63,8 @@ export function Dashboard() {
   const [isDraftingIssue, setIsDraftingIssue] = useState(false);
   const [isApprovingIssue, setIsApprovingIssue] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState<WorkflowRun | null>(null);
+  const [isCancellingWorkflow, setIsCancellingWorkflow] = useState(false);
   const [processMessage, setProcessMessage] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
 
@@ -128,7 +134,42 @@ export function Dashboard() {
 
   useEffect(() => {
     refreshAll();
+    getWorkflows(1)
+      .then((response) => {
+        const latest = response.items[0];
+        if (latest) {
+          setActiveWorkflow(latest);
+          setIsProcessing(["queued", "running"].includes(latest.status));
+        }
+      })
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!activeWorkflow || !["queued", "running"].includes(activeWorkflow.status)) return;
+
+    const timer = window.setInterval(() => {
+      getWorkflow(activeWorkflow.id)
+        .then((workflow) => {
+          setActiveWorkflow(workflow);
+          if (workflow.status === "completed") {
+            setIsProcessing(false);
+            setProcessMessage(workflow.result?.message ?? "Ticket workflow completed.");
+            refreshTickets();
+            refreshClusters();
+            refreshCodebaseStatus();
+          } else if (workflow.status === "failed" || workflow.status === "cancelled") {
+            setIsProcessing(false);
+            setProcessError(workflow.error_message ?? `Workflow ${workflow.status}.`);
+          }
+        })
+        .catch((error) => {
+          setProcessError(error instanceof Error ? error.message : "Unable to refresh workflow.");
+        });
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [activeWorkflow?.id, activeWorkflow?.status]);
 
   useEffect(() => {
     if (selectedClusterId) {
@@ -145,16 +186,10 @@ export function Dashboard() {
 
     try {
       const result = await processTickets(20, false);
-      setProcessMessage(
-        `${result.message} Processed ${result.processed}, failed ${result.failed}.`,
-      );
-      refreshTickets();
-      refreshClusters();
-      refreshCodebaseStatus();
-      if (selectedClusterId) loadClusterDetail(selectedClusterId);
+      setActiveWorkflow(result);
+      setProcessMessage("Ticket processing workflow queued.");
     } catch (error) {
-      setProcessError(error instanceof Error ? error.message : "Ticket extraction failed.");
-    } finally {
+      setProcessError(error instanceof Error ? error.message : "Unable to queue ticket processing.");
       setIsProcessing(false);
     }
   };
@@ -169,6 +204,22 @@ export function Dashboard() {
       setClusterError(error instanceof Error ? error.message : "Unable to retrieve code evidence.");
     } finally {
       setIsRetrievingCode(false);
+    }
+  };
+
+  const runWorkflowCancellation = async () => {
+    if (!activeWorkflow) return;
+    setIsCancellingWorkflow(true);
+    setProcessError(null);
+    try {
+      const workflow = await cancelWorkflow(activeWorkflow.id);
+      setActiveWorkflow(workflow);
+      setIsProcessing(false);
+      setProcessMessage("Ticket workflow cancelled.");
+    } catch (error) {
+      setProcessError(error instanceof Error ? error.message : "Unable to cancel workflow.");
+    } finally {
+      setIsCancellingWorkflow(false);
     }
   };
 
@@ -263,6 +314,14 @@ export function Dashboard() {
           </div>
         ) : null}
 
+        {activeWorkflow ? (
+          <WorkflowRunPanel
+            workflow={activeWorkflow}
+            isCancelling={isCancellingWorkflow}
+            onCancel={runWorkflowCancellation}
+          />
+        ) : null}
+
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {overviewCards.map((card) => {
             const Icon = card.icon;
@@ -335,6 +394,50 @@ export function Dashboard() {
         <TicketTable tickets={tickets} />
       </div>
     </main>
+  );
+}
+
+function WorkflowRunPanel({
+  workflow,
+  isCancelling,
+  onCancel,
+}: {
+  workflow: WorkflowRun;
+  isCancelling: boolean;
+  onCancel: () => void;
+}) {
+  const canCancel = ["queued", "running"].includes(workflow.status);
+  return (
+    <section className="rounded-lg border border-line bg-white p-4 shadow-sm" aria-live="polite">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ticket workflow</div>
+          <div className="mt-1 text-sm font-semibold text-ink">
+            {formatStatus(workflow.current_step)} · attempt {workflow.attempt_count || 1}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-signal">{workflow.progress_percent}%</span>
+          {canCancel ? (
+            <button
+              type="button"
+              className="rounded border border-line px-2 py-1 text-xs font-semibold text-slate-600 hover:border-red-300 hover:text-red-700 disabled:opacity-50"
+              disabled={isCancelling}
+              onClick={onCancel}
+            >
+              {isCancelling ? "Cancelling…" : "Cancel"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full rounded-full transition-all ${workflow.status === "failed" ? "bg-red-500" : "bg-signal"}`}
+          style={{ width: `${workflow.progress_percent}%` }}
+        />
+      </div>
+      {workflow.error_message ? <p className="mt-2 text-xs text-red-700">{workflow.error_message}</p> : null}
+    </section>
   );
 }
 
