@@ -29,6 +29,7 @@ export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
   const [isIndexing, setIsIndexing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasExistingIndex = (status?.indexed_chunks ?? 0) > 0;
 
   const refreshStatus = () => {
     getCodebaseStatus()
@@ -122,9 +123,21 @@ export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
           disabled={isIndexing || !repoPath.trim()}
         >
           {isIndexing ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
-          {sourceMode === "github" ? "Clone & Index" : "Index Repo"}
+          {sourceMode === "github"
+            ? hasExistingIndex
+              ? "Clone & Re-index"
+              : "Clone & Index"
+            : hasExistingIndex
+              ? "Re-index Repo"
+              : "Index Repo"}
         </button>
         </div>
+        {hasExistingIndex ? (
+          <p className="text-xs leading-5 text-slate-500">
+            Re-indexing this repository replaces its previous chunks, contextual embeddings, BM25
+            entries, and retrieved code evidence.
+          </p>
+        ) : null}
       </form>
 
       {message ? (

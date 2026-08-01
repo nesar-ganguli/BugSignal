@@ -30,6 +30,7 @@ class CodeChunkRead(BaseModel):
     repo_path: str
     file_path: str
     language: str
+    contextualized_text: str | None = None
     function_or_class_name: str | None = None
     chunk_type: str
     start_line: int

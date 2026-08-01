@@ -16,7 +16,7 @@ BugSignal AI performs a multi-step engineering workflow:
 4. Cluster similar complaints with HDBSCAN.
 5. Score cluster priority with an explainable rubric.
 6. Index a local target codebase into SQLite and ChromaDB.
-7. Retrieve code evidence with hybrid semantic and keyword search.
+7. Retrieve code evidence with contextual embeddings, BM25, and reciprocal-rank fusion.
 8. Draft a GitHub issue using only tickets and retrieved snippets.
 9. Run evidence guard validation.
 10. Wait for human approval before GitHub issue creation.
@@ -33,8 +33,8 @@ FastAPI Backend
   |-- Embedding Service -> all-MiniLM-L6-v2
   |-- Clustering Service -> HDBSCAN
   |-- Priority Service -> explainable scoring
-  |-- Code Indexing Service -> repo scan + ChromaDB
-  |-- Retrieval Service -> semantic + keyword search
+  |-- Code Indexing Service -> symbol-aware chunks + contextual embeddings
+  |-- Retrieval Service -> Chroma + SQLite FTS5/BM25 + rank fusion
   |-- Issue Drafting Service -> Ollama
   |-- Evidence Guard -> citation and hallucination checks
   |-- GitHub Service -> human-approved issue creation
@@ -48,7 +48,7 @@ FastAPI Backend
 - Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
 - Clustering: HDBSCAN
 - Vector store: ChromaDB
-- Code indexing: local filesystem traversal
+- Code indexing: local filesystem traversal with deterministic file and symbol context
 - GitHub issues: GitHub REST API after approval
 
 ## Current Status
@@ -61,8 +61,8 @@ Phase 11 is complete. The MVP includes:
 - local embeddings and HDBSCAN clustering
 - explainable priority scoring
 - cluster review dashboard with ticket, priority, confidence, and cohesion views
-- local repo indexing into SQLite and ChromaDB
-- hybrid code retrieval for ticket clusters
+- symbol-aware local repo indexing into SQLite and ChromaDB
+- contextualized hybrid code retrieval with BM25 and reciprocal-rank fusion
 - evidence-grounded issue drafting
 - evidence guard warnings for unsupported claims
 - human approval before GitHub issue creation
@@ -140,6 +140,13 @@ VITE_API_BASE_URL=http://localhost:8000
 11. Click **Approve Issue**.
 
 If GitHub env vars are configured, approval creates the GitHub issue. Otherwise, the draft is marked approved locally and can be retried after credentials are added.
+
+Re-index a repository after changing indexing or embedding settings. The index stores the original
+source for evidence display and a separate contextualized representation containing file path,
+module, language, enclosing symbol, signature, imports, and nearby symbols for retrieval.
+The same contextualized representation is indexed in ChromaDB and SQLite FTS5. Retrieval combines
+semantic and BM25 result ranks using reciprocal-rank fusion, then applies bounded boosts for exact
+routes, identifiers, error strings, and function names.
 
 ## API Overview
 

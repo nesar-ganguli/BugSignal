@@ -42,6 +42,7 @@ def run_sqlite_migrations() -> None:
     }
     code_chunk_columns = {
         "chunk_type": "VARCHAR(80) DEFAULT 'code' NOT NULL",
+        "contextualized_text": "TEXT",
         "indexed_at": "DATETIME",
     }
     issue_draft_columns = {
@@ -96,6 +97,41 @@ def run_sqlite_migrations() -> None:
                 connection.execute(
                     text(f"ALTER TABLE code_chunks ADD COLUMN {column_name} {column_definition}")
                 )
+        connection.execute(
+            text(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks_fts USING fts5(
+                    code_chunk_id UNINDEXED,
+                    repo_path UNINDEXED,
+                    file_path,
+                    symbol_name,
+                    contextualized_text,
+                    tokenize = 'unicode61'
+                )
+                """
+            )
+        )
+        connection.execute(text("DELETE FROM code_chunks_fts"))
+        connection.execute(
+            text(
+                """
+                INSERT INTO code_chunks_fts (
+                    code_chunk_id,
+                    repo_path,
+                    file_path,
+                    symbol_name,
+                    contextualized_text
+                )
+                SELECT
+                    id,
+                    repo_path,
+                    file_path,
+                    COALESCE(function_or_class_name, ''),
+                    COALESCE(contextualized_text, chunk_text)
+                FROM code_chunks
+                """
+            )
+        )
 
         existing_issue_draft_columns = {
             row[1]

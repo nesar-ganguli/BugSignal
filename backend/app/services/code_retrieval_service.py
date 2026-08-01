@@ -11,6 +11,7 @@ from app.repositories.code_repository import (
     clear_retrieved_evidence_for_cluster,
     get_code_chunks_by_ids,
     list_code_chunks,
+    search_code_chunks_bm25,
 )
 from app.repositories.ticket_repository import list_tickets_for_cluster
 from app.schemas.code_schema import CodeRetrievalResponse, CodeSnippetRead
@@ -18,9 +19,12 @@ from app.services.chroma_service import ChromaDependencyError, get_code_collecti
 from app.services.embedding_service import EmbeddingDependencyError, EmbeddingService
 
 
-TOP_K_SEMANTIC = 24
-TOP_K_KEYWORD = 24
+TOP_K_SEMANTIC = 30
+TOP_K_BM25 = 30
 TOP_K_FINAL = 8
+RRF_K = 60
+SEMANTIC_WEIGHT = 0.55
+BM25_WEIGHT = 0.45
 
 
 class CodeRetrievalError(RuntimeError):
@@ -30,22 +34,31 @@ class CodeRetrievalError(RuntimeError):
 @dataclass
 class RetrievalCandidate:
     code_chunk_id: int
+    semantic_rank: int | None = None
+    bm25_rank: int | None = None
     semantic_score: float = 0.0
-    keyword_score: float = 0.0
+    bm25_score: float | None = None
     exact_matches: list[str] = field(default_factory=list)
-    keyword_matches: list[str] = field(default_factory=list)
 
     @property
     def final_score(self) -> float:
-        exact_boost = min(len(self.exact_matches) * 0.08, 0.24)
-        return round(min((self.semantic_score * 0.62) + (self.keyword_score * 0.38) + exact_boost, 1.0), 4)
+        fused_score = 0.0
+        if self.semantic_rank is not None:
+            fused_score += SEMANTIC_WEIGHT / (RRF_K + self.semantic_rank)
+        if self.bm25_rank is not None:
+            fused_score += BM25_WEIGHT / (RRF_K + self.bm25_rank)
+
+        max_rrf_score = (SEMANTIC_WEIGHT + BM25_WEIGHT) / (RRF_K + 1)
+        normalized_rrf = fused_score / max_rrf_score if max_rrf_score else 0.0
+        exact_boost = min(len(self.exact_matches) * 0.06, 0.18)
+        return round(min((normalized_rrf * 0.88) + exact_boost, 1.0), 4)
 
     @property
     def evidence_type(self) -> str:
-        if self.semantic_score and self.keyword_score:
+        if self.semantic_rank is not None and self.bm25_rank is not None:
             return "hybrid"
-        if self.keyword_score:
-            return "keyword"
+        if self.bm25_rank is not None:
+            return "bm25"
         return "semantic"
 
 
@@ -62,7 +75,7 @@ def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalRes
 
     candidates: dict[int, RetrievalCandidate] = {}
     _merge_semantic_candidates(candidates, query, db)
-    _merge_keyword_candidates(candidates, all_chunks, terms, exact_terms)
+    _merge_bm25_candidates(candidates, db, terms, exact_terms)
 
     if not candidates:
         clear_retrieved_evidence_for_cluster(db, cluster.id)
@@ -74,8 +87,13 @@ def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalRes
             message="No relevant code snippets found.",
         )
 
-    top_candidates = sorted(candidates.values(), key=lambda candidate: candidate.final_score, reverse=True)[:TOP_K_FINAL]
-    chunks_by_id = get_code_chunks_by_ids(db, [candidate.code_chunk_id for candidate in top_candidates])
+    chunks_by_id = get_code_chunks_by_ids(db, list(candidates))
+    _add_exact_match_boosts(candidates, chunks_by_id, exact_terms)
+    top_candidates = sorted(
+        candidates.values(),
+        key=lambda candidate: candidate.final_score,
+        reverse=True,
+    )[:TOP_K_FINAL]
 
     clear_retrieved_evidence_for_cluster(db, cluster.id)
     snippets: list[CodeSnippetRead] = []
@@ -163,39 +181,29 @@ def _merge_semantic_candidates(candidates: dict[int, RetrievalCandidate], query:
 
     metadatas = result.get("metadatas", [[]])[0]
     distances = result.get("distances", [[]])[0]
-    for metadata, distance in zip(metadatas, distances):
+    for rank, (metadata, distance) in enumerate(zip(metadatas, distances), start=1):
         if not metadata:
             continue
         code_chunk_id = int(metadata.get("code_chunk_id"))
         candidate = candidates.setdefault(code_chunk_id, RetrievalCandidate(code_chunk_id=code_chunk_id))
+        candidate.semantic_rank = min(candidate.semantic_rank or rank, rank)
         candidate.semantic_score = max(candidate.semantic_score, _distance_to_score(float(distance)))
 
 
-def _merge_keyword_candidates(
+def _merge_bm25_candidates(
     candidates: dict[int, RetrievalCandidate],
-    chunks: list[CodeChunk],
+    db: Session,
     terms: list[str],
     exact_terms: list[str],
 ) -> None:
-    scored_chunks: list[tuple[float, CodeChunk, list[str], list[str]]] = []
-    searchable_terms = [term for term in terms if len(term) >= 3][:80]
-    searchable_exact_terms = exact_terms[:40]
-
-    for chunk in chunks:
-        haystack = _chunk_search_text(chunk)
-        keyword_matches = [term for term in searchable_terms if term in haystack]
-        exact_matches = [term for term in searchable_exact_terms if term.lower() in haystack]
-        if not keyword_matches and not exact_matches:
-            continue
-
-        keyword_score = _keyword_score(keyword_matches, exact_matches, chunk)
-        scored_chunks.append((keyword_score, chunk, keyword_matches[:8], exact_matches[:6]))
-
-    for keyword_score, chunk, keyword_matches, exact_matches in sorted(scored_chunks, key=lambda item: item[0], reverse=True)[:TOP_K_KEYWORD]:
-        candidate = candidates.setdefault(chunk.id, RetrievalCandidate(code_chunk_id=chunk.id))
-        candidate.keyword_score = max(candidate.keyword_score, keyword_score)
-        candidate.keyword_matches = _dedupe_preserve_order([*candidate.keyword_matches, *keyword_matches])[:8]
-        candidate.exact_matches = _dedupe_preserve_order([*candidate.exact_matches, *exact_matches])[:6]
+    bm25_query = _build_bm25_query(terms, exact_terms)
+    for result in search_code_chunks_bm25(db, bm25_query, TOP_K_BM25):
+        candidate = candidates.setdefault(
+            result.code_chunk_id,
+            RetrievalCandidate(code_chunk_id=result.code_chunk_id),
+        )
+        candidate.bm25_rank = min(candidate.bm25_rank or result.rank, result.rank)
+        candidate.bm25_score = result.score
 
 
 def _distance_to_score(distance: float) -> float:
@@ -204,23 +212,33 @@ def _distance_to_score(distance: float) -> float:
     return round(1 / (1 + max(distance, 0.0)), 4)
 
 
-def _keyword_score(keyword_matches: list[str], exact_matches: list[str], chunk: CodeChunk) -> float:
-    score = min(len(keyword_matches) / 18, 0.55) + min(len(exact_matches) / 8, 0.35)
-    path_text = f"{chunk.file_path} {chunk.function_or_class_name or ''}".lower()
-    path_hits = sum(1 for term in keyword_matches if term in path_text)
-    score += min(path_hits * 0.04, 0.1)
-    return round(min(score, 1.0), 4)
+def _add_exact_match_boosts(
+    candidates: dict[int, RetrievalCandidate],
+    chunks_by_id: dict[int, CodeChunk],
+    exact_terms: list[str],
+) -> None:
+    searchable_exact_terms = exact_terms[:40]
+    for candidate in candidates.values():
+        chunk = chunks_by_id.get(candidate.code_chunk_id)
+        if chunk is None:
+            continue
+        haystack = _chunk_search_text(chunk)
+        candidate.exact_matches = [
+            term for term in searchable_exact_terms if term.lower() in haystack
+        ][:6]
 
 
 def _candidate_reason(candidate: RetrievalCandidate) -> str:
     reasons: list[str] = []
-    if candidate.semantic_score:
-        reasons.append(f"Semantic score {candidate.semantic_score:.2f}")
+    if candidate.semantic_rank is not None:
+        reasons.append(
+            f"Semantic rank {candidate.semantic_rank} (similarity {candidate.semantic_score:.2f})"
+        )
+    if candidate.bm25_rank is not None:
+        reasons.append(f"BM25 rank {candidate.bm25_rank}")
     if candidate.exact_matches:
         reasons.append("Exact matches: " + ", ".join(candidate.exact_matches[:6]))
-    if candidate.keyword_matches:
-        reasons.append("Keyword matches: " + ", ".join(candidate.keyword_matches[:8]))
-    return "; ".join(reasons) if reasons else "Retrieved by hybrid search."
+    return "; ".join(reasons) if reasons else "Retrieved by contextual hybrid search."
 
 
 def _snippet_from_chunk(
@@ -249,9 +267,25 @@ def _chunk_search_text(chunk: CodeChunk) -> str:
             chunk.file_path,
             chunk.language,
             chunk.function_or_class_name or "",
+            chunk.contextualized_text or "",
             chunk.chunk_text,
         ]
     ).lower()
+
+
+def _build_bm25_query(terms: list[str], exact_terms: list[str]) -> str:
+    values = _dedupe_preserve_order(
+        [
+            *[term for term in exact_terms if len(term.strip()) >= 3][:20],
+            *[term for term in terms if len(term.strip()) >= 3][:40],
+        ]
+    )
+    return " OR ".join(_quote_fts_value(value) for value in values)
+
+
+def _quote_fts_value(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value.strip())
+    return '"' + normalized.replace('"', '""') + '"'
 
 
 def _tokenize(value: str) -> list[str]:

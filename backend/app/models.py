@@ -67,6 +67,7 @@ class CodeChunk(Base):
     file_path: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(80))
     chunk_text: Mapped[str] = mapped_column(Text)
+    contextualized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     function_or_class_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     chunk_type: Mapped[str] = mapped_column(String(80), default="code")
     start_line: Mapped[int] = mapped_column(Integer)
