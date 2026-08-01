@@ -102,7 +102,7 @@ class CodeChunkCandidate:
     embedding_id: str
 
 
-def index_codebase(db: Session, local_repo_path: str) -> CodebaseIndexResponse:
+def index_codebase(db: Session, project_id: int, local_repo_path: str) -> CodebaseIndexResponse:
     repo_root = Path(local_repo_path).expanduser().resolve()
     if not repo_root.exists() or not repo_root.is_dir():
         raise ValueError("local_repo_path must point to an existing directory.")
@@ -110,9 +110,12 @@ def index_codebase(db: Session, local_repo_path: str) -> CodebaseIndexResponse:
     candidates, skipped_files, errors = _scan_repo(repo_root)
     repo_path = str(repo_root)
 
+    for candidate in candidates:
+        candidate.embedding_id = f"project-{project_id}-{candidate.embedding_id}"
+
     collection = get_code_collection()
-    _delete_chroma_repo(collection, repo_path)
-    clear_code_chunks_for_repo(db, repo_path)
+    _delete_chroma_repo(collection, project_id, repo_path)
+    clear_code_chunks_for_repo(db, project_id, repo_path)
 
     if not candidates:
         db.commit()
@@ -134,6 +137,7 @@ def index_codebase(db: Session, local_repo_path: str) -> CodebaseIndexResponse:
         db_chunks.append(
             add_code_chunk(
                 db,
+                project_id=project_id,
                 repo_path=repo_path,
                 file_path=candidate.file_path,
                 language=candidate.language,
@@ -147,7 +151,7 @@ def index_codebase(db: Session, local_repo_path: str) -> CodebaseIndexResponse:
             )
         )
     db.flush()
-    replace_code_search_index(db, repo_path, db_chunks)
+    replace_code_search_index(db, project_id, repo_path, db_chunks)
 
     collection.add(
         ids=[candidate.embedding_id for candidate in candidates],
@@ -156,6 +160,7 @@ def index_codebase(db: Session, local_repo_path: str) -> CodebaseIndexResponse:
         metadatas=[
             {
                 "code_chunk_id": db_chunk.id,
+                "project_id": project_id,
                 "repo_path": repo_path,
                 "file_path": candidate.file_path,
                 "language": candidate.language,
@@ -421,9 +426,11 @@ def _embedding_id(relative_path: str, start_line: int, end_line: int, chunk_text
     return f"code-{digest}"
 
 
-def _delete_chroma_repo(collection, repo_path: str) -> None:
+def _delete_chroma_repo(collection, project_id: int, repo_path: str) -> None:
     try:
-        collection.delete(where={"repo_path": repo_path})
+        collection.delete(
+            where={"$and": [{"project_id": project_id}, {"repo_path": repo_path}]}
+        )
     except Exception:
         # Chroma raises for some empty-collection delete paths; indexing should still proceed.
         return

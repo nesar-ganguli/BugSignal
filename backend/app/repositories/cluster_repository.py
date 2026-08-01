@@ -4,28 +4,29 @@ from sqlalchemy.orm import Session
 from app.models import Cluster, Ticket
 
 
-def count_clusters(db: Session) -> int:
-    return db.scalar(select(func.count()).select_from(Cluster)) or 0
+def count_clusters(db: Session, project_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(Cluster).where(Cluster.project_id == project_id)) or 0
 
 
-def list_clusters(db: Session) -> list[Cluster]:
-    statement = select(Cluster).order_by(Cluster.priority_score.desc(), Cluster.ticket_count.desc(), Cluster.id.asc())
+def list_clusters(db: Session, project_id: int) -> list[Cluster]:
+    statement = select(Cluster).where(Cluster.project_id == project_id).order_by(Cluster.priority_score.desc(), Cluster.ticket_count.desc(), Cluster.id.asc())
     return list(db.scalars(statement).all())
 
 
-def get_cluster(db: Session, cluster_id: int) -> Cluster | None:
-    return db.get(Cluster, cluster_id)
+def get_cluster(db: Session, project_id: int, cluster_id: int) -> Cluster | None:
+    return db.scalar(select(Cluster).where(Cluster.project_id == project_id, Cluster.id == cluster_id))
 
 
-def clear_clusters(db: Session) -> None:
-    db.query(Ticket).update({Ticket.cluster_id: None})
-    db.execute(delete(Cluster))
+def clear_clusters(db: Session, project_id: int) -> None:
+    db.query(Ticket).filter(Ticket.project_id == project_id).update({Ticket.cluster_id: None})
+    db.execute(delete(Cluster).where(Cluster.project_id == project_id))
     db.flush()
 
 
 def create_cluster(
     db: Session,
     *,
+    project_id: int,
     title: str,
     summary: str,
     ticket_count: int,
@@ -38,6 +39,7 @@ def create_cluster(
     status: str = "needs_review",
 ) -> Cluster:
     cluster = Cluster(
+        project_id=project_id,
         title=title,
         summary=summary,
         ticket_count=ticket_count,

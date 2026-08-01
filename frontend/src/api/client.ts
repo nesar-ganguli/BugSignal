@@ -14,6 +14,28 @@ export type HealthResponse = {
   };
 };
 
+export type CurrentUserResponse = {
+  subject: string;
+  email: string | null;
+  display_name: string | null;
+  organization_external_id: string;
+  roles: string[];
+  user_id: number;
+  organization_id: number;
+  project_id: number;
+  project_role: string;
+};
+
+export type Project = {
+  id: number;
+  organization_id: number;
+  name: string;
+  slug: string;
+  role: string;
+};
+
+export type ProjectListResponse = { items: Project[] };
+
 export type UploadTicketsResponse = {
   filename: string;
   bytes_received: number;
@@ -210,6 +232,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAccessToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const projectId = window.localStorage.getItem("bugsignal_project_id");
+  if (projectId) headers.set("X-Project-ID", projectId);
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     const fallback = `${response.status} ${response.statusText}`;
@@ -227,6 +251,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
+}
+
+export async function getCurrentUser(): Promise<CurrentUserResponse> {
+  const response = await request<CurrentUserResponse>("/auth/me");
+  window.localStorage.setItem("bugsignal_project_id", String(response.project_id));
+  return response;
+}
+
+export function getProjects(): Promise<ProjectListResponse> {
+  return request<ProjectListResponse>("/projects");
+}
+
+export function createProject(name: string, slug: string): Promise<Project> {
+  return request<Project>("/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, slug }),
+  });
 }
 
 export function getTickets(): Promise<TicketListResponse> {

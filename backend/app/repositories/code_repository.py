@@ -33,22 +33,23 @@ def ensure_code_search_index(db: Session) -> None:
     )
 
 
-def clear_code_chunks_for_repo(db: Session, repo_path: str) -> None:
+def clear_code_chunks_for_repo(db: Session, project_id: int, repo_path: str) -> None:
     if _dialect_name(db) == "sqlite":
         ensure_code_search_index(db)
         db.execute(
-            text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path"),
-            {"repo_path": repo_path},
+            text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path AND code_chunk_id IN (SELECT id FROM code_chunks WHERE project_id=:project_id)"),
+            {"repo_path": repo_path, "project_id": project_id},
         )
-    chunk_ids = select(CodeChunk.id).where(CodeChunk.repo_path == repo_path)
+    chunk_ids = select(CodeChunk.id).where(CodeChunk.project_id == project_id, CodeChunk.repo_path == repo_path)
     db.execute(delete(RetrievedEvidence).where(RetrievedEvidence.code_chunk_id.in_(chunk_ids)))
-    db.execute(delete(CodeChunk).where(CodeChunk.repo_path == repo_path))
+    db.execute(delete(CodeChunk).where(CodeChunk.project_id == project_id, CodeChunk.repo_path == repo_path))
     db.flush()
 
 
 def add_code_chunk(
     db: Session,
     *,
+    project_id: int,
     repo_path: str,
     file_path: str,
     language: str,
@@ -61,6 +62,7 @@ def add_code_chunk(
     embedding_id: str,
 ) -> CodeChunk:
     chunk = CodeChunk(
+        project_id=project_id,
         repo_path=repo_path,
         file_path=file_path,
         language=language,
@@ -79,6 +81,7 @@ def add_code_chunk(
 
 def replace_code_search_index(
     db: Session,
+    project_id: int,
     repo_path: str,
     chunks: list[CodeChunk],
 ) -> None:
@@ -87,8 +90,8 @@ def replace_code_search_index(
 
     ensure_code_search_index(db)
     db.execute(
-        text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path"),
-        {"repo_path": repo_path},
+        text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path AND code_chunk_id IN (SELECT id FROM code_chunks WHERE project_id=:project_id)"),
+        {"repo_path": repo_path, "project_id": project_id},
     )
     if not chunks:
         return
@@ -127,6 +130,7 @@ def replace_code_search_index(
 
 def search_code_chunks_bm25(
     db: Session,
+    project_id: int,
     query: str,
     limit: int,
 ) -> list[BM25SearchResult]:
@@ -134,7 +138,7 @@ def search_code_chunks_bm25(
         return []
 
     if _dialect_name(db) == "postgresql":
-        return _search_code_chunks_postgres(db, query, limit)
+        return _search_code_chunks_postgres(db, project_id, query, limit)
 
     ensure_code_search_index(db)
     rows = db.execute(
@@ -144,12 +148,13 @@ def search_code_chunks_bm25(
                 CAST(code_chunk_id AS INTEGER) AS code_chunk_id,
                 bm25(code_chunks_fts, 0.0, 0.0, 3.0, 4.0, 1.0) AS bm25_score
             FROM code_chunks_fts
-            WHERE code_chunks_fts MATCH :query
+            JOIN code_chunks ON code_chunks.id = CAST(code_chunks_fts.code_chunk_id AS INTEGER)
+            WHERE code_chunks_fts MATCH :query AND code_chunks.project_id = :project_id
             ORDER BY bm25_score ASC
             LIMIT :limit
             """
         ),
-        {"query": query, "limit": limit},
+        {"query": query, "limit": limit, "project_id": project_id},
     ).all()
 
     return [
@@ -163,7 +168,7 @@ def search_code_chunks_bm25(
 
 
 def _search_code_chunks_postgres(
-    db: Session, query: str, limit: int
+    db: Session, project_id: int, query: str, limit: int
 ) -> list[BM25SearchResult]:
     rows = db.execute(
         text(
@@ -180,7 +185,7 @@ def _search_code_chunks_postgres(
                         ),
                         websearch_to_tsquery('simple', :query)
                     ) AS search_score
-                FROM code_chunks
+                FROM code_chunks WHERE project_id = :project_id
             )
             SELECT code_chunk_id, search_score
             FROM ranked
@@ -189,7 +194,7 @@ def _search_code_chunks_postgres(
             LIMIT :limit
             """
         ),
-        {"query": query, "limit": limit},
+        {"query": query, "limit": limit, "project_id": project_id},
     ).all()
     return [
         BM25SearchResult(
@@ -205,32 +210,33 @@ def _dialect_name(db: Session) -> str:
     return db.bind.dialect.name if db.bind is not None else ""
 
 
-def codebase_status(db: Session) -> tuple[int, int, datetime | None]:
-    indexed_files = db.scalar(select(func.count(distinct(CodeChunk.file_path)))) or 0
-    indexed_chunks = db.scalar(select(func.count()).select_from(CodeChunk)) or 0
-    last_indexed_at = db.scalar(select(func.max(CodeChunk.indexed_at)))
+def codebase_status(db: Session, project_id: int) -> tuple[int, int, datetime | None]:
+    indexed_files = db.scalar(select(func.count(distinct(CodeChunk.file_path))).where(CodeChunk.project_id == project_id)) or 0
+    indexed_chunks = db.scalar(select(func.count()).select_from(CodeChunk).where(CodeChunk.project_id == project_id)) or 0
+    last_indexed_at = db.scalar(select(func.max(CodeChunk.indexed_at)).where(CodeChunk.project_id == project_id))
     return indexed_files, indexed_chunks, last_indexed_at
 
 
-def list_code_chunks(db: Session) -> list[CodeChunk]:
-    return list(db.scalars(select(CodeChunk).order_by(CodeChunk.file_path.asc(), CodeChunk.start_line.asc())).all())
+def list_code_chunks(db: Session, project_id: int) -> list[CodeChunk]:
+    return list(db.scalars(select(CodeChunk).where(CodeChunk.project_id == project_id).order_by(CodeChunk.file_path.asc(), CodeChunk.start_line.asc())).all())
 
 
-def get_code_chunks_by_ids(db: Session, code_chunk_ids: list[int]) -> dict[int, CodeChunk]:
+def get_code_chunks_by_ids(db: Session, project_id: int, code_chunk_ids: list[int]) -> dict[int, CodeChunk]:
     if not code_chunk_ids:
         return {}
-    chunks = db.scalars(select(CodeChunk).where(CodeChunk.id.in_(code_chunk_ids))).all()
+    chunks = db.scalars(select(CodeChunk).where(CodeChunk.project_id == project_id, CodeChunk.id.in_(code_chunk_ids))).all()
     return {chunk.id: chunk for chunk in chunks}
 
 
-def clear_retrieved_evidence_for_cluster(db: Session, cluster_id: int) -> None:
-    db.execute(delete(RetrievedEvidence).where(RetrievedEvidence.cluster_id == cluster_id))
+def clear_retrieved_evidence_for_cluster(db: Session, project_id: int, cluster_id: int) -> None:
+    db.execute(delete(RetrievedEvidence).where(RetrievedEvidence.project_id == project_id, RetrievedEvidence.cluster_id == cluster_id))
     db.flush()
 
 
 def add_retrieved_evidence(
     db: Session,
     *,
+    project_id: int,
     cluster_id: int,
     code_chunk_id: int,
     relevance_score: float,
@@ -238,6 +244,7 @@ def add_retrieved_evidence(
     reason: str,
 ) -> RetrievedEvidence:
     evidence = RetrievedEvidence(
+        project_id=project_id,
         cluster_id=cluster_id,
         code_chunk_id=code_chunk_id,
         relevance_score=relevance_score,
@@ -249,11 +256,11 @@ def add_retrieved_evidence(
     return evidence
 
 
-def list_retrieved_evidence_for_cluster(db: Session, cluster_id: int) -> list[tuple[RetrievedEvidence, CodeChunk]]:
+def list_retrieved_evidence_for_cluster(db: Session, project_id: int, cluster_id: int) -> list[tuple[RetrievedEvidence, CodeChunk]]:
     statement = (
         select(RetrievedEvidence, CodeChunk)
         .join(CodeChunk, CodeChunk.id == RetrievedEvidence.code_chunk_id)
-        .where(RetrievedEvidence.cluster_id == cluster_id)
+        .where(RetrievedEvidence.project_id == project_id, RetrievedEvidence.cluster_id == cluster_id)
         .order_by(RetrievedEvidence.relevance_score.desc(), RetrievedEvidence.id.asc())
     )
     return list(db.execute(statement).all())

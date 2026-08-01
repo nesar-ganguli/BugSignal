@@ -30,35 +30,36 @@ from app.services.code_retrieval_service import (
 from app.services.embedding_service import EmbeddingDependencyError
 from app.services.issue_drafting_service import IssueDraftingError, draft_issue_for_cluster
 from app.services.llm_client import LLMClient, LLMResponseError, LLMUnavailableError
+from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
 
 router = APIRouter(prefix="/clusters", tags=["clusters"])
 
 
 @router.get("", response_model=ClusterListResponse)
-async def get_clusters(db: Session = Depends(get_db)) -> ClusterListResponse:
-    clusters = list_clusters(db)
+async def get_clusters(db: Session = Depends(get_db), tenant: TenantContext = Depends(require_tenant_context)) -> ClusterListResponse:
+    clusters = list_clusters(db, tenant.project_id)
     return ClusterListResponse(
         items=[ClusterRead.model_validate(cluster) for cluster in clusters],
-        total=count_clusters(db),
+        total=count_clusters(db, tenant.project_id),
     )
 
 
 @router.post("/rebuild", response_model=ClusterRunResponse)
-async def rebuild_clusters(db: Session = Depends(get_db)) -> ClusterRunResponse:
+async def rebuild_clusters(db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> ClusterRunResponse:
     try:
-        return rebuild_ticket_clusters(db)
+        return rebuild_ticket_clusters(db, tenant.project_id)
     except (EmbeddingDependencyError, ClusteringDependencyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/{cluster_id}/retrieve-code", response_model=CodeRetrievalResponse)
-async def retrieve_cluster_code(cluster_id: int, db: Session = Depends(get_db)) -> CodeRetrievalResponse:
-    cluster = get_cluster(db, cluster_id)
+async def retrieve_cluster_code(cluster_id: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> CodeRetrievalResponse:
+    cluster = get_cluster(db, tenant.project_id, cluster_id)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found.")
 
     try:
-        return retrieve_code_for_cluster(db, cluster)
+        return retrieve_code_for_cluster(db, tenant.project_id, cluster)
     except CodeRetrievalError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ChromaDependencyError, EmbeddingDependencyError) as exc:
@@ -66,15 +67,15 @@ async def retrieve_cluster_code(cluster_id: int, db: Session = Depends(get_db)) 
 
 
 @router.post("/{cluster_id}/draft-issue", response_model=IssueDraftResponse)
-async def draft_cluster_issue(cluster_id: int, db: Session = Depends(get_db)) -> IssueDraftResponse:
-    cluster = get_cluster(db, cluster_id)
+async def draft_cluster_issue(cluster_id: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> IssueDraftResponse:
+    cluster = get_cluster(db, tenant.project_id, cluster_id)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found.")
 
     settings = get_settings()
     llm_client = LLMClient(settings.ollama_base_url, settings.ollama_model, timeout_seconds=180.0)
     try:
-        return await draft_issue_for_cluster(db, cluster, llm_client)
+        return await draft_issue_for_cluster(db, tenant.project_id, cluster, llm_client)
     except IssueDraftingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMUnavailableError as exc:
@@ -84,14 +85,14 @@ async def draft_cluster_issue(cluster_id: int, db: Session = Depends(get_db)) ->
 
 
 @router.get("/{cluster_id}", response_model=ClusterDetailResponse)
-async def get_cluster_detail(cluster_id: int, db: Session = Depends(get_db)) -> ClusterDetailResponse:
-    cluster = get_cluster(db, cluster_id)
+async def get_cluster_detail(cluster_id: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_tenant_context)) -> ClusterDetailResponse:
+    cluster = get_cluster(db, tenant.project_id, cluster_id)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found.")
 
-    tickets = list_tickets_for_cluster(db, cluster_id)
-    retrieved_rows = list_retrieved_evidence_for_cluster(db, cluster_id)
-    issue_draft = get_latest_issue_draft_for_cluster(db, cluster_id)
+    tickets = list_tickets_for_cluster(db, tenant.project_id, cluster_id)
+    retrieved_rows = list_retrieved_evidence_for_cluster(db, tenant.project_id, cluster_id)
+    issue_draft = get_latest_issue_draft_for_cluster(db, tenant.project_id, cluster_id)
     return ClusterDetailResponse(
         cluster=ClusterRead.model_validate(cluster),
         tickets=[TicketRead.model_validate(ticket) for ticket in tickets],

@@ -23,3 +23,9 @@ export async function getAccessToken(): Promise<string | null> {
   const user = await userManager.getUser();
   return user && !user.expired ? user.access_token : null;
 }
+
+
+export async function signOut(): Promise<void> {
+  window.localStorage.removeItem("bugsignal_project_id");
+  if (userManager) await userManager.signoutRedirect();
+}

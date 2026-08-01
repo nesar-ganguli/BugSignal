@@ -168,6 +168,13 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:7b
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 EMBEDDING_DEVICE=cpu
+OIDC_ENABLED=false
+OIDC_ISSUER=https://your-provider.example.com/
+OIDC_AUDIENCE=https://api.bugsignal.local
+OIDC_JWKS_URL=https://your-provider.example.com/.well-known/jwks.json
+OIDC_ALGORITHMS=RS256
+OIDC_ORGANIZATION_CLAIM=org_id
+OIDC_ROLES_CLAIM=roles
 DATABASE_URL=postgresql+psycopg://bugsignal:bugsignal_local@localhost:5432/bugsignal
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
@@ -180,7 +187,26 @@ CLONED_REPOS_DIR=./repos
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 VITE_API_BASE_URL=http://localhost:8000
+VITE_OIDC_ENABLED=false
+VITE_OIDC_AUTHORITY=https://your-provider.example.com/
+VITE_OIDC_CLIENT_ID=bugsignal-spa
+VITE_OIDC_REDIRECT_URI=http://localhost:5173
+VITE_OIDC_POST_LOGOUT_REDIRECT_URI=http://localhost:5173
+VITE_OIDC_SCOPE=openid profile email
 ```
+
+### Authentication and tenant isolation
+
+BugSignal accepts standards-compliant OIDC access tokens and uses Authorization Code + PKCE in
+the browser. Deployed environments must enable OIDC in both backend and frontend configuration.
+The backend validates token signature, issuer, audience, expiry, and required claims.
+
+The configured organization claim selects an organization. Every organization receives a default
+project, and every ticket, cluster, code chunk, evidence record, issue draft, and workflow belongs
+to exactly one project. API requests select a project with `X-Project-ID`; omitted headers use the
+organization's first project. The backend verifies project ownership and returns 404 for projects
+outside the authenticated organization. Development mode provisions an isolated
+`local-development` organization and should never be enabled in production.
 
 `CLONED_REPOS_DIR` is where public GitHub repos are cloned when you index by URL. GitHub issue settings are optional. Without them, approved issue drafts remain approved locally.
 

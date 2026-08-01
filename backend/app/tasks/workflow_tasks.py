@@ -8,7 +8,7 @@ from app.database import SessionLocal
 from app.repositories.workflow_repository import (
     complete_workflow,
     fail_workflow,
-    get_workflow_run,
+    get_workflow_run_by_id,
     mark_workflow_retrying,
     mark_workflow_running,
     update_workflow_progress,
@@ -23,7 +23,7 @@ class WorkflowCancelled(RuntimeError):
 @celery_app.task(bind=True, max_retries=2, name="bugsignal.process_tickets")
 def process_tickets_workflow(self: Task, workflow_id: str) -> dict:
     with SessionLocal() as db:
-        workflow = get_workflow_run(db, workflow_id)
+        workflow = get_workflow_run_by_id(db, workflow_id)
         if workflow is None:
             return {"workflow_id": workflow_id, "status": "missing"}
         if workflow.status == "completed":
@@ -42,6 +42,7 @@ def process_tickets_workflow(self: Task, workflow_id: str) -> dict:
             result = asyncio.run(
                 process_ticket_batch(
                     db,
+                    project_id=workflow.project_id,
                     limit=int(workflow_input.get("limit", 20)),
                     # A retry resumes pending/failed tickets instead of repeating completed work.
                     force=bool(workflow_input.get("force", False)) and self.request.retries == 0,

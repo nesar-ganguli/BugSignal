@@ -4,10 +4,11 @@ import { FileUp, Loader2, Upload } from "lucide-react";
 import { uploadTickets, UploadTicketsResponse } from "../api/client";
 
 type TicketUploadProps = {
+  disabled?: boolean;
   onUploaded?: (result: UploadTicketsResponse) => void;
 };
 
-export function TicketUpload({ onUploaded }: TicketUploadProps) {
+export function TicketUpload({ disabled = false, onUploaded }: TicketUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [result, setResult] = useState<UploadTicketsResponse | null>(null);
@@ -58,6 +59,7 @@ export function TicketUpload({ onUploaded }: TicketUploadProps) {
             type="file"
             accept=".csv,text/csv"
             onChange={onFileChange}
+            disabled={disabled}
           />
         </label>
 
@@ -75,7 +77,7 @@ export function TicketUpload({ onUploaded }: TicketUploadProps) {
           <button
             className="inline-flex items-center justify-center gap-2 rounded bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
             type="submit"
-            disabled={!file || isUploading}
+            disabled={disabled || !file || isUploading}
           >
             {isUploading ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}
             Upload

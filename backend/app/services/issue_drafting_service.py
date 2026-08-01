@@ -19,9 +19,9 @@ class IssueDraftingError(RuntimeError):
     pass
 
 
-async def draft_issue_for_cluster(db: Session, cluster: Cluster, llm_client: LLMClient) -> IssueDraftResponse:
-    tickets = list_tickets_for_cluster(db, cluster.id)
-    retrieved_rows = list_retrieved_evidence_for_cluster(db, cluster.id)
+async def draft_issue_for_cluster(db: Session, project_id: int, cluster: Cluster, llm_client: LLMClient) -> IssueDraftResponse:
+    tickets = list_tickets_for_cluster(db, project_id, cluster.id)
+    retrieved_rows = list_retrieved_evidence_for_cluster(db, project_id, cluster.id)
     if not retrieved_rows:
         raise IssueDraftingError("Retrieve code evidence for this cluster before drafting an issue.")
 
@@ -34,6 +34,7 @@ async def draft_issue_for_cluster(db: Session, cluster: Cluster, llm_client: LLM
 
     issue = create_issue_draft(
         db,
+        project_id=project_id,
         cluster_id=cluster.id,
         title=structured.title,
         body_markdown=body_markdown,

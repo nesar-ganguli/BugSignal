@@ -5,10 +5,11 @@ import { IssueDraft } from "../api/client";
 type IssueDraftPanelProps = {
   draft: IssueDraft | null;
   isApprovingIssue: boolean;
+  readOnly?: boolean;
   onApproveIssue: (issueId: number) => void;
 };
 
-export function IssueDraftPanel({ draft, isApprovingIssue, onApproveIssue }: IssueDraftPanelProps) {
+export function IssueDraftPanel({ draft, isApprovingIssue, readOnly = false, onApproveIssue }: IssueDraftPanelProps) {
   if (!draft) {
     return (
       <section className="rounded-lg border border-line bg-white p-5 shadow-sm">
@@ -98,7 +99,7 @@ export function IssueDraftPanel({ draft, isApprovingIssue, onApproveIssue }: Iss
             className="rounded bg-signal px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             type="button"
             onClick={() => onApproveIssue(draft.id)}
-            disabled={isApprovingIssue || isCreated}
+            disabled={readOnly || isApprovingIssue || isCreated}
           >
             {isApprovingIssue ? "Approving..." : isApprovedLocal ? "Create on GitHub" : isCreated ? "Created" : "Approve Issue"}
           </button>

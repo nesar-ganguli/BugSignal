@@ -11,6 +11,8 @@ sys.path.append(str(BACKEND_DIR))
 
 from app.database import SessionLocal  # noqa: E402
 from app.services.code_indexing_service import index_codebase  # noqa: E402
+from app.models import Project  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 
 def main() -> None:
@@ -18,7 +20,10 @@ def main() -> None:
         raise SystemExit("Usage: python scripts/index_repo.py /path/to/repo")
 
     with SessionLocal() as db:
-        result = index_codebase(db, sys.argv[1])
+        project = db.scalar(select(Project).order_by(Project.id.asc()).limit(1))
+        if project is None:
+            raise SystemExit("No project exists. Run `alembic upgrade head` first.")
+        result = index_codebase(db, project.id, sys.argv[1])
 
     print(
         f"{result.message} Skipped {result.skipped_files} files. "

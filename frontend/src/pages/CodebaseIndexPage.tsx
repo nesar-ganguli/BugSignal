@@ -19,10 +19,11 @@ function formatDate(value: string | null) {
 }
 
 type CodebaseIndexPageProps = {
+  readOnly?: boolean;
   onStatusChange?: (status: CodebaseStatusResponse) => void;
 };
 
-export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
+export function CodebaseIndexPage({ readOnly = false, onStatusChange }: CodebaseIndexPageProps) {
   const [repoPath, setRepoPath] = useState("");
   const [sourceMode, setSourceMode] = useState<"local" | "github">("local");
   const [status, setStatus] = useState<CodebaseStatusResponse | null>(null);
@@ -94,6 +95,7 @@ export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
               sourceMode === "local" ? "bg-white text-ink shadow-sm" : "text-slate-600 hover:text-ink"
             }`}
             type="button"
+            disabled={readOnly}
             onClick={() => setSourceMode("local")}
           >
             Local path
@@ -103,6 +105,7 @@ export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
               sourceMode === "github" ? "bg-white text-ink shadow-sm" : "text-slate-600 hover:text-ink"
             }`}
             type="button"
+            disabled={readOnly}
             onClick={() => setSourceMode("github")}
           >
             <Github size={15} aria-hidden="true" />
@@ -116,11 +119,12 @@ export function CodebaseIndexPage({ onStatusChange }: CodebaseIndexPageProps) {
             placeholder={sourceMode === "github" ? "https://github.com/owner/repo" : "/Users/you/projects/target-app"}
             value={repoPath}
             onChange={(event) => setRepoPath(event.target.value)}
+            disabled={readOnly}
           />
         <button
           className="inline-flex items-center justify-center gap-2 rounded bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
           type="submit"
-          disabled={isIndexing || !repoPath.trim()}
+          disabled={readOnly || isIndexing || !repoPath.trim()}
         >
           {isIndexing ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
           {sourceMode === "github"

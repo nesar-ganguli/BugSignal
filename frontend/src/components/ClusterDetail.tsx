@@ -9,6 +9,7 @@ type ClusterDetailProps = {
   isRetrievingCode: boolean;
   isDraftingIssue: boolean;
   isApprovingIssue: boolean;
+  readOnly?: boolean;
   onRetrieveCode: (clusterId: number) => void;
   onDraftIssue: (clusterId: number) => void;
   onApproveIssue: (issueId: number) => void;
@@ -20,6 +21,7 @@ export function ClusterDetail({
   isRetrievingCode,
   isDraftingIssue,
   isApprovingIssue,
+  readOnly = false,
   onRetrieveCode,
   onDraftIssue,
   onApproveIssue,
@@ -57,7 +59,7 @@ export function ClusterDetail({
             className="rounded border border-line px-3 py-2 text-sm font-semibold text-ink transition hover:border-signal hover:text-signal disabled:cursor-not-allowed disabled:text-slate-400"
             type="button"
             onClick={() => onRetrieveCode(cluster.id)}
-            disabled={isRetrievingCode}
+            disabled={readOnly || isRetrievingCode}
           >
             {isRetrievingCode ? "Retrieving..." : "Retrieve Code"}
           </button>
@@ -65,7 +67,7 @@ export function ClusterDetail({
             className="rounded bg-signal px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             type="button"
             onClick={() => onDraftIssue(cluster.id)}
-            disabled={isDraftingIssue || !hasRetrievedEvidence}
+            disabled={readOnly || isDraftingIssue || !hasRetrievedEvidence}
           >
             {isDraftingIssue ? "Drafting..." : "Draft Issue"}
           </button>
@@ -129,6 +131,7 @@ export function ClusterDetail({
         <IssueDraftPanel
           draft={issue_draft}
           isApprovingIssue={isApprovingIssue}
+          readOnly={readOnly}
           onApproveIssue={onApproveIssue}
         />
       </div>

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, Boxes, ListChecks, Loader2, RefreshCw, WandSparkles } from "lucide-react";
+import { Activity, AlertCircle, Boxes, Building2, ListChecks, Loader2, LogOut, Plus, RefreshCw, WandSparkles } from "lucide-react";
 
 import {
   approveIssue,
   cancelWorkflow,
+  createProject,
   Cluster,
   CodebaseStatusResponse,
   ClusterDetailResponse,
@@ -12,6 +13,8 @@ import {
   getClusterDetail,
   getClusters,
   getHealth,
+  getCurrentUser,
+  getProjects,
   getWorkflow,
   getWorkflows,
   getTickets,
@@ -19,8 +22,11 @@ import {
   processTickets,
   retrieveCodeForCluster,
   Ticket,
+  CurrentUserResponse,
+  Project,
   WorkflowRun,
 } from "../api/client";
+import { oidcEnabled, signOut } from "../auth";
 import { ClusterList } from "../components/ClusterList";
 import { ClusterDetail } from "../components/ClusterDetail";
 import { TicketUpload } from "../components/TicketUpload";
@@ -67,6 +73,12 @@ export function Dashboard() {
   const [isCancellingWorkflow, setIsCancellingWorkflow] = useState(false);
   const [processMessage, setProcessMessage] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectSlug, setProjectSlug] = useState("");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const refreshTickets = () => {
     getTickets()
@@ -134,6 +146,14 @@ export function Dashboard() {
 
   useEffect(() => {
     refreshAll();
+    Promise.all([getCurrentUser(), getProjects()])
+      .then(([user, projectResponse]) => {
+        setCurrentUser(user);
+        setProjects(projectResponse.items);
+      })
+      .catch((error) => {
+        setHealthError(error instanceof Error ? error.message : "Unable to load tenant context.");
+      });
     getWorkflows(1)
       .then((response) => {
         const latest = response.items[0];
@@ -178,6 +198,24 @@ export function Dashboard() {
       setClusterDetail(null);
     }
   }, [selectedClusterId]);
+
+  const switchProject = (projectId: number) => {
+    window.localStorage.setItem("bugsignal_project_id", String(projectId));
+    window.location.reload();
+  };
+
+  const runProjectCreation = async () => {
+    setIsCreatingProject(true);
+    setProcessError(null);
+    try {
+      const project = await createProject(projectName.trim(), projectSlug.trim());
+      window.localStorage.setItem("bugsignal_project_id", String(project.id));
+      window.location.reload();
+    } catch (error) {
+      setProcessError(error instanceof Error ? error.message : "Unable to create project.");
+      setIsCreatingProject(false);
+    }
+  };
 
   const runExtraction = async () => {
     setIsProcessing(true);
@@ -260,6 +298,7 @@ export function Dashboard() {
     { label: "P0/P1", value: clusters.filter((cluster) => ["P0 Critical", "P1 High"].includes(cluster.priority_label)).length.toString(), icon: Activity },
   ];
   const extractedTickets = tickets.filter((ticket) => ticket.extraction_status === "completed").length;
+  const canEdit = currentUser ? ["owner", "admin", "member"].includes(currentUser.project_role) : false;
 
   return (
     <main className="min-h-screen bg-panel">
@@ -270,6 +309,37 @@ export function Dashboard() {
             <p className="mt-1 text-sm text-slate-600">Evidence-grounded support ticket triage for engineering teams.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {currentUser ? (
+              <div className="flex flex-wrap items-center gap-2 rounded border border-line bg-slate-50 p-1.5">
+                <span className="inline-flex items-center gap-1.5 px-2 text-xs font-semibold text-slate-600">
+                  <Building2 size={14} aria-hidden="true" />
+                  {currentUser.organization_external_id}
+                </span>
+                <select
+                  className="rounded border border-line bg-white px-2 py-1 text-sm font-semibold text-ink"
+                  aria-label="Active project"
+                  value={currentUser.project_id}
+                  onChange={(event) => switchProject(Number(event.target.value))}
+                >
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+                {['owner', 'admin'].includes(currentUser.project_role) ? (
+                  <button type="button" className="rounded p-1 text-slate-600 hover:bg-white hover:text-signal" title="Create project" onClick={() => setShowProjectForm((value) => !value)}>
+                    <Plus size={16} aria-hidden="true" />
+                  </button>
+                ) : null}
+                <span className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-600">
+                  {currentUser.display_name ?? currentUser.email ?? currentUser.subject} · {currentUser.project_role}
+                </span>
+                {oidcEnabled ? (
+                  <button type="button" className="rounded p-1 text-slate-600 hover:text-red-700" title="Sign out" onClick={() => void signOut()}>
+                    <LogOut size={16} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <HealthPill health={health} />
             <button
               className="inline-flex items-center justify-center gap-2 rounded border border-line bg-white px-3 py-1 text-sm font-semibold text-slate-700 transition hover:border-signal hover:text-signal"
@@ -284,6 +354,21 @@ export function Dashboard() {
       </header>
 
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6">
+        {showProjectForm ? (
+          <section className="rounded-lg border border-line bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="grid flex-1 gap-1 text-xs font-semibold text-slate-600">Project name
+                <input className="rounded border border-line px-3 py-2 text-sm font-normal text-ink" value={projectName} onChange={(event) => { setProjectName(event.target.value); if (!projectSlug) setProjectSlug(event.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')); }} />
+              </label>
+              <label className="grid flex-1 gap-1 text-xs font-semibold text-slate-600">Slug
+                <input className="rounded border border-line px-3 py-2 text-sm font-normal text-ink" value={projectSlug} onChange={(event) => setProjectSlug(event.target.value.toLowerCase())} />
+              </label>
+              <button type="button" className="rounded bg-signal px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={isCreatingProject || !projectName.trim() || !projectSlug.trim()} onClick={runProjectCreation}>
+                {isCreatingProject ? "Creating…" : "Create project"}
+              </button>
+            </div>
+          </section>
+        ) : null}
         {healthError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {healthError}
@@ -314,10 +399,17 @@ export function Dashboard() {
           </div>
         ) : null}
 
+        {currentUser && !canEdit ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            You have viewer access to this project. Changes and workflow actions are disabled.
+          </div>
+        ) : null}
+
         {activeWorkflow ? (
           <WorkflowRunPanel
             workflow={activeWorkflow}
             isCancelling={isCancellingWorkflow}
+            readOnly={!canEdit}
             onCancel={runWorkflowCancellation}
           />
         ) : null}
@@ -347,7 +439,7 @@ export function Dashboard() {
         />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,420px)_1fr]">
-          <TicketUpload onUploaded={refreshTickets} />
+          <TicketUpload disabled={!canEdit} onUploaded={refreshTickets} />
           <section className="grid gap-6">
             <div className="rounded-lg border border-line bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -359,7 +451,7 @@ export function Dashboard() {
                   className="inline-flex items-center justify-center gap-2 rounded bg-signal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                   type="button"
                   onClick={runExtraction}
-                  disabled={isProcessing || ticketTotal === 0}
+                  disabled={!canEdit || isProcessing || ticketTotal === 0}
                 >
                   {isProcessing ? (
                     <Loader2 className="animate-spin" size={16} aria-hidden="true" />
@@ -384,12 +476,13 @@ export function Dashboard() {
           isRetrievingCode={isRetrievingCode}
           isDraftingIssue={isDraftingIssue}
           isApprovingIssue={isApprovingIssue}
+          readOnly={!canEdit}
           onRetrieveCode={runCodeRetrieval}
           onDraftIssue={runIssueDraft}
           onApproveIssue={runIssueApproval}
         />
 
-        <CodebaseIndexPage onStatusChange={setCodebaseStatus} />
+        <CodebaseIndexPage readOnly={!canEdit} onStatusChange={setCodebaseStatus} />
 
         <TicketTable tickets={tickets} />
       </div>
@@ -400,13 +493,15 @@ export function Dashboard() {
 function WorkflowRunPanel({
   workflow,
   isCancelling,
+  readOnly,
   onCancel,
 }: {
   workflow: WorkflowRun;
   isCancelling: boolean;
+  readOnly: boolean;
   onCancel: () => void;
 }) {
-  const canCancel = ["queued", "running"].includes(workflow.status);
+  const canCancel = !readOnly && ["queued", "running"].includes(workflow.status);
   return (
     <section className="rounded-lg border border-line bg-white p-4 shadow-sm" aria-live="polite">
       <div className="flex items-center justify-between gap-4">
