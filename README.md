@@ -50,6 +50,7 @@ FastAPI Backend
 - Vector store: ChromaDB
 - Code indexing: local filesystem traversal with deterministic file and symbol context
 - GitHub issues: GitHub REST API after approval
+- Workflow queue: Celery with Redis and database-backed progress tracking
 
 ## Current Status
 
@@ -73,12 +74,15 @@ Phase 11 is complete. The MVP includes:
 
 ### Backend
 
+Use Python 3.11 or newer.
+
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp ../.env.example ../.env
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -109,17 +113,72 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
+### Workflow worker
+
+Ticket extraction and clustering run outside the API process. Start PostgreSQL and Redis, apply
+database migrations, then run the Celery worker from `backend`:
+
+```bash
+docker compose up -d postgres redis
+cd backend
+source .venv/bin/activate
+alembic upgrade head
+celery -A app.celery_app.celery_app worker --loglevel=info
+```
+
+On macOS, Redis can also run directly without Docker:
+
+```bash
+brew install python@3.11 redis
+redis-server --daemonize yes
+cd backend
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+celery -A app.celery_app.celery_app worker --loglevel=info --pool=solo --concurrency=1
+```
+
+Workflow state remains in the application database and is available through `GET /workflows` and
+`GET /workflows/{workflow_id}` even if the browser disconnects.
+
+### Database migrations
+
+The API and utility scripts never create or alter tables automatically. Apply committed migrations
+before starting a new API or worker release:
+
+```bash
+cd backend
+source .venv/bin/activate
+alembic upgrade head
+```
+
+Check that the database matches the SQLAlchemy models with `alembic check`. Create future schema
+changes with `alembic revision --autogenerate -m "description"`, inspect the generated migration,
+and test both upgrade and downgrade paths before committing it.
+
+SQLite remains supported for tests and lightweight local evaluation. PostgreSQL is the expected
+runtime database for concurrent API and worker processes. A database created before Alembic was
+introduced should be backed up and reviewed before using `alembic stamp 20260801_0001`; stamping
+records a version but does not repair a mismatched schema.
+
 ## Environment Variables
 
 ```text
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:7b
-DATABASE_URL=sqlite:///./bugsignal.db
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DEVICE=cpu
+DATABASE_URL=postgresql+psycopg://bugsignal:bugsignal_local@localhost:5432/bugsignal
+DATABASE_POOL_SIZE=10
+DATABASE_MAX_OVERFLOW=20
+DATABASE_POOL_TIMEOUT_SECONDS=30
 GITHUB_TOKEN=
 GITHUB_REPO_OWNER=
 GITHUB_REPO_NAME=
 CHROMA_PERSIST_DIR=./chroma_data
 CLONED_REPOS_DIR=./repos
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
@@ -144,7 +203,8 @@ If GitHub env vars are configured, approval creates the GitHub issue. Otherwise,
 Re-index a repository after changing indexing or embedding settings. The index stores the original
 source for evidence display and a separate contextualized representation containing file path,
 module, language, enclosing symbol, signature, imports, and nearby symbols for retrieval.
-The same contextualized representation is indexed in ChromaDB and SQLite FTS5. Retrieval combines
+The same contextualized representation is indexed in ChromaDB and database full-text search
+(PostgreSQL GIN/`tsvector` in production, SQLite FTS5 in tests). Retrieval combines
 semantic and BM25 result ranks using reciprocal-rank fusion, then applies bounded boosts for exact
 routes, identifiers, error strings, and function names.
 
@@ -154,6 +214,10 @@ routes, identifiers, error strings, and function names.
 - `POST /tickets/upload`
 - `GET /tickets`
 - `POST /tickets/process`
+- `POST /workflows/ticket-processing`
+- `GET /workflows`
+- `GET /workflows/{workflow_id}`
+- `POST /workflows/{workflow_id}/cancel`
 - `GET /clusters`
 - `POST /clusters/rebuild`
 - `GET /clusters/{cluster_id}`

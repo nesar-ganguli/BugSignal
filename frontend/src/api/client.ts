@@ -1,3 +1,5 @@
+import { getAccessToken } from "../auth";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export type HealthResponse = {
@@ -64,6 +66,30 @@ export type ProcessTicketsResponse = {
   outlier_tickets: number;
   message: string;
   errors: string[];
+};
+
+export type WorkflowStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type WorkflowRun = {
+  id: string;
+  workflow_type: string;
+  status: WorkflowStatus;
+  current_step: string;
+  progress_percent: number;
+  input: Record<string, unknown> | null;
+  result: ProcessTicketsResponse | null;
+  error_message: string | null;
+  attempt_count: number;
+  queue_task_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type WorkflowRunListResponse = {
+  items: WorkflowRun[];
+  total: number;
 };
 
 export type Cluster = {
@@ -181,7 +207,10 @@ export type IssueApprovalResponse = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  const token = await getAccessToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     const fallback = `${response.status} ${response.statusText}`;
     let detail = fallback;
@@ -240,14 +269,24 @@ export function uploadTickets(file: File): Promise<UploadTicketsResponse> {
   });
 }
 
-export function processTickets(limit = 20, force = false): Promise<ProcessTicketsResponse> {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    force: String(force),
-  });
-  return request<ProcessTicketsResponse>(`/tickets/process?${params.toString()}`, {
+export function processTickets(limit = 20, force = false): Promise<WorkflowRun> {
+  return request<WorkflowRun>("/workflows/ticket-processing", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ limit, force }),
   });
+}
+
+export function getWorkflow(workflowId: string): Promise<WorkflowRun> {
+  return request<WorkflowRun>(`/workflows/${workflowId}`);
+}
+
+export function getWorkflows(limit = 20): Promise<WorkflowRunListResponse> {
+  return request<WorkflowRunListResponse>(`/workflows?limit=${limit}`);
+}
+
+export function cancelWorkflow(workflowId: string): Promise<WorkflowRun> {
+  return request<WorkflowRun>(`/workflows/${workflowId}/cancel`, { method: "POST" });
 }
 
 export function getCodebaseStatus(): Promise<CodebaseStatusResponse> {

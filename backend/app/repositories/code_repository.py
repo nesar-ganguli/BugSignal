@@ -15,6 +15,8 @@ class BM25SearchResult:
 
 
 def ensure_code_search_index(db: Session) -> None:
+    if db.bind is not None and db.bind.dialect.name != "sqlite":
+        return
     db.execute(
         text(
             """
@@ -32,11 +34,12 @@ def ensure_code_search_index(db: Session) -> None:
 
 
 def clear_code_chunks_for_repo(db: Session, repo_path: str) -> None:
-    ensure_code_search_index(db)
-    db.execute(
-        text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path"),
-        {"repo_path": repo_path},
-    )
+    if _dialect_name(db) == "sqlite":
+        ensure_code_search_index(db)
+        db.execute(
+            text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path"),
+            {"repo_path": repo_path},
+        )
     chunk_ids = select(CodeChunk.id).where(CodeChunk.repo_path == repo_path)
     db.execute(delete(RetrievedEvidence).where(RetrievedEvidence.code_chunk_id.in_(chunk_ids)))
     db.execute(delete(CodeChunk).where(CodeChunk.repo_path == repo_path))
@@ -79,6 +82,9 @@ def replace_code_search_index(
     repo_path: str,
     chunks: list[CodeChunk],
 ) -> None:
+    if _dialect_name(db) != "sqlite":
+        return
+
     ensure_code_search_index(db)
     db.execute(
         text("DELETE FROM code_chunks_fts WHERE repo_path = :repo_path"),
@@ -127,6 +133,9 @@ def search_code_chunks_bm25(
     if not query.strip() or limit <= 0:
         return []
 
+    if _dialect_name(db) == "postgresql":
+        return _search_code_chunks_postgres(db, query, limit)
+
     ensure_code_search_index(db)
     rows = db.execute(
         text(
@@ -151,6 +160,49 @@ def search_code_chunks_bm25(
         )
         for index, row in enumerate(rows, start=1)
     ]
+
+
+def _search_code_chunks_postgres(
+    db: Session, query: str, limit: int
+) -> list[BM25SearchResult]:
+    rows = db.execute(
+        text(
+            """
+            WITH ranked AS (
+                SELECT
+                    id AS code_chunk_id,
+                    ts_rank_cd(
+                        to_tsvector(
+                            'simple',
+                            coalesce(file_path, '') || ' ' ||
+                            coalesce(function_or_class_name, '') || ' ' ||
+                            coalesce(contextualized_text, chunk_text)
+                        ),
+                        websearch_to_tsquery('simple', :query)
+                    ) AS search_score
+                FROM code_chunks
+            )
+            SELECT code_chunk_id, search_score
+            FROM ranked
+            WHERE search_score > 0
+            ORDER BY search_score DESC, code_chunk_id ASC
+            LIMIT :limit
+            """
+        ),
+        {"query": query, "limit": limit},
+    ).all()
+    return [
+        BM25SearchResult(
+            code_chunk_id=int(row.code_chunk_id),
+            rank=index,
+            score=round(float(row.search_score), 4),
+        )
+        for index, row in enumerate(rows, start=1)
+    ]
+
+
+def _dialect_name(db: Session) -> str:
+    return db.bind.dialect.name if db.bind is not None else ""
 
 
 def codebase_status(db: Session) -> tuple[int, int, datetime | None]:

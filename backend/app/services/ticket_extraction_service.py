@@ -12,6 +12,7 @@ class TicketExtractionError(RuntimeError):
 async def extract_ticket_fields(ticket: Ticket, llm_client: LLMClient) -> TicketExtractionResult:
     prompt = _build_ticket_extraction_prompt(ticket)
     payload = await llm_client.generate_json(prompt)
+    payload = _normalize_extraction_payload(ticket, payload)
 
     try:
         extraction = TicketExtractionResult.model_validate(payload)
@@ -122,18 +123,61 @@ def _apply_deterministic_flags(ticket: Ticket, extraction: TicketExtractionResul
         "loading forever",
     ]
 
-    extraction.contains_payment_or_revenue_issue = (
-        extraction.contains_payment_or_revenue_issue or _contains_any(text, payment_terms)
-    )
-    extraction.contains_data_loss_issue = extraction.contains_data_loss_issue or _contains_any(
-        text, data_loss_terms
-    )
-    extraction.contains_auth_issue = extraction.contains_auth_issue or _contains_any(text, auth_terms)
-    extraction.contains_performance_issue = (
-        extraction.contains_performance_issue or _contains_any(text, performance_terms)
-    )
+    # Classification flags are deterministic so a small model cannot raise priority by
+    # returning unsupported booleans. Extracted text still contributes supporting terms.
+    extraction.contains_payment_or_revenue_issue = _contains_any(text, payment_terms)
+    extraction.contains_data_loss_issue = _contains_any(text, data_loss_terms)
+    extraction.contains_auth_issue = _contains_any(text, auth_terms)
+    extraction.contains_performance_issue = _contains_any(text, performance_terms)
     return extraction
 
 
 def _contains_any(text: str, terms: list[str]) -> bool:
     return any(term in text for term in terms)
+
+
+def _normalize_extraction_payload(ticket: Ticket, payload: dict) -> dict:
+    normalized = dict(payload)
+    string_fields = {
+        "intent",
+        "user_action",
+        "expected_behavior",
+        "actual_behavior",
+        "feature_area",
+    }
+    for field in string_fields:
+        if normalized.get(field) is not None and not isinstance(normalized.get(field), str):
+            normalized[field] = None
+
+    error_terms = normalized.get("error_terms")
+    if isinstance(error_terms, str):
+        error_terms = [error_terms]
+    if not isinstance(error_terms, list):
+        error_terms = []
+    normalized["error_terms"] = [
+        value.strip()
+        for value in error_terms
+        if isinstance(value, str)
+        and value.strip()
+        and value.strip().lower() not in {"...", "unknown", "none", "n/a"}
+    ][:20]
+
+    allowed_sentiments = {"neutral", "frustrated", "angry", "urgent"}
+    sentiment = normalized.get("sentiment")
+    if not isinstance(sentiment, str) or sentiment.lower().strip() not in allowed_sentiments:
+        normalized["sentiment"] = _infer_sentiment(ticket)
+    else:
+        normalized["sentiment"] = sentiment.lower().strip()
+
+    return normalized
+
+
+def _infer_sentiment(ticket: Ticket) -> str:
+    text = f"{ticket.title} {ticket.body}".lower()
+    if _contains_any(text, ["urgent", "asap", "immediately", "critical", "blocking"]):
+        return "urgent"
+    if _contains_any(text, ["angry", "unacceptable", "furious", "outrageous"]):
+        return "angry"
+    if _contains_any(text, ["frustrated", "annoying", "again", "still not", "keeps failing"]):
+        return "frustrated"
+    return "neutral"

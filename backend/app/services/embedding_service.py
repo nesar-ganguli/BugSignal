@@ -2,6 +2,8 @@ from functools import lru_cache
 
 import numpy as np
 
+from app.config import get_settings
+
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -11,9 +13,11 @@ class EmbeddingDependencyError(RuntimeError):
 
 
 class EmbeddingService:
-    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
-        self.model_name = model_name
-        self._model = _load_model(model_name)
+    def __init__(self, model_name: str | None = None, device: str | None = None) -> None:
+        settings = get_settings()
+        self.model_name = model_name or settings.embedding_model
+        self.device = device or settings.embedding_device
+        self._model = _load_model(self.model_name, self.device)
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         if not texts:
@@ -26,8 +30,8 @@ class EmbeddingService:
         return np.asarray(embeddings, dtype=np.float32)
 
 
-@lru_cache(maxsize=2)
-def _load_model(model_name: str):
+@lru_cache(maxsize=4)
+def _load_model(model_name: str, device: str):
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:
@@ -36,7 +40,7 @@ def _load_model(model_name: str):
         ) from exc
 
     try:
-        return SentenceTransformer(model_name)
+        return SentenceTransformer(model_name, device=device)
     except Exception as exc:
         raise EmbeddingDependencyError(
             f"Unable to load embedding model {model_name}. "

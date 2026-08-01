@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import clusters, codebase, health, issues, tickets
+from fastapi import Depends
+
+from app.api import auth, clusters, codebase, health, issues, tickets, workflows
 from app.config import get_settings
-from app.database import Base, engine, run_sqlite_migrations
 from app import models  # noqa: F401
+from app.services.auth_service import require_principal
 
 
 def create_app() -> FastAPI:
@@ -29,15 +31,13 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
-    app.include_router(tickets.router)
-    app.include_router(clusters.router)
-    app.include_router(codebase.router)
-    app.include_router(issues.router)
-
-    @app.on_event("startup")
-    def create_database_tables() -> None:
-        Base.metadata.create_all(bind=engine)
-        run_sqlite_migrations()
+    app.include_router(auth.router)
+    protected = [Depends(require_principal)]
+    app.include_router(tickets.router, dependencies=protected)
+    app.include_router(clusters.router, dependencies=protected)
+    app.include_router(codebase.router, dependencies=protected)
+    app.include_router(issues.router, dependencies=protected)
+    app.include_router(workflows.router, dependencies=protected)
 
     return app
 

@@ -10,14 +10,12 @@ SAMPLE_CSV_PATH = BACKEND_DIR / "app" / "data" / "sample_tickets.csv"
 os.chdir(BACKEND_DIR)
 sys.path.append(str(BACKEND_DIR))
 
-from app.database import Base, SessionLocal, engine, run_sqlite_migrations  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
 from app.repositories.ticket_repository import count_tickets, upsert_ticket  # noqa: E402
 from app.services.ticket_csv_service import parse_ticket_csv  # noqa: E402
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
-    run_sqlite_migrations()
     parse_result = parse_ticket_csv(SAMPLE_CSV_PATH.read_bytes())
 
     inserted = 0
