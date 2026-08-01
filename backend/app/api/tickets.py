@@ -17,6 +17,8 @@ from app.services.llm_client import LLMUnavailableError
 from app.services.ticket_csv_service import parse_ticket_csv
 from app.services.ticket_processing_service import process_ticket_batch
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
+from app.config import get_settings
+from app.services.rate_limit_service import enforce_expensive_rate_limit
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -26,7 +28,10 @@ async def upload_tickets(file: UploadFile = File(...), db: Session = Depends(get
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Please upload a CSV file.")
 
-    contents = await file.read()
+    max_upload_bytes = get_settings().max_ticket_upload_size_bytes
+    contents = await file.read(max_upload_bytes + 1)
+    if len(contents) > max_upload_bytes:
+        raise HTTPException(status_code=413, detail="Ticket CSV exceeds the configured upload limit.")
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded CSV is empty.")
 
@@ -76,6 +81,7 @@ async def get_tickets(
 
 @router.post("/process", response_model=TicketProcessResponse)
 async def process_tickets(
+    _: None = Depends(enforce_expensive_rate_limit),
     db: Session = Depends(get_db),
     limit: int = Query(default=20, ge=1, le=100),
     force: bool = Query(default=False),

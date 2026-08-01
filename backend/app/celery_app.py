@@ -1,10 +1,20 @@
 from celery import Celery
+from celery.signals import after_setup_logger, after_setup_task_logger
 import sys
 
 from app.config import get_settings
+from app.logging_config import configure_logger
 
 
 settings = get_settings()
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def configure_celery_logger(logger, **kwargs) -> None:
+    configure_logger(logger)
+
+
 celery_app = Celery(
     "bugsignal",
     broker=settings.celery_broker_url,

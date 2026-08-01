@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -57,6 +57,33 @@ def get_active_workflow_run(db: Session, project_id: int, workflow_type: str) ->
         .limit(1)
     )
     return db.scalar(statement)
+
+
+def fail_stale_workflows(
+    db: Session,
+    project_id: int,
+    workflow_type: str,
+    timeout_seconds: int,
+) -> int:
+    cutoff = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+    workflows = db.scalars(
+        select(WorkflowRun).where(
+            WorkflowRun.project_id == project_id,
+            WorkflowRun.workflow_type == workflow_type,
+            WorkflowRun.status.in_(["queued", "running"]),
+            WorkflowRun.updated_at < cutoff,
+        )
+    ).all()
+    now = datetime.utcnow()
+    for workflow in workflows:
+        workflow.status = "failed"
+        workflow.current_step = "failed"
+        workflow.error_message = "Workflow exceeded the stale execution timeout."
+        workflow.completed_at = now
+        workflow.updated_at = now
+    if workflows:
+        db.commit()
+    return len(workflows)
 
 
 def mark_workflow_dispatched(db: Session, workflow: WorkflowRun, task_id: str) -> None:

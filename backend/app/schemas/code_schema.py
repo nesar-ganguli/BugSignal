@@ -1,12 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CodebaseIndexRequest(BaseModel):
-    local_repo_path: str
+    local_repo_path: str = Field(min_length=1, max_length=4096)
 
 
 class GitHubCodebaseIndexRequest(BaseModel):
-    github_url: str
+    github_url: str = Field(min_length=10, max_length=2048, pattern=r"^https://github\.com/[^/\s]+/[^/\s]+/?$")
 
 
 class CodebaseIndexResponse(BaseModel):

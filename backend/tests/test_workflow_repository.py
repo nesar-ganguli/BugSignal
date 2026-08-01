@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models import Organization, Project
 from app.repositories.workflow_repository import (
     complete_workflow,
     create_workflow_run,
+    fail_stale_workflows,
     get_active_workflow_run,
     get_workflow_run,
     mark_workflow_running,
@@ -64,6 +66,23 @@ class WorkflowRepositoryTests(unittest.TestCase):
 
             self.assertIsNotNone(get_workflow_run(db, project_one.id, workflow.id))
             self.assertIsNone(get_workflow_run(db, project_two.id, workflow.id))
+
+    def test_stale_workflow_is_failed_without_touching_other_projects(self) -> None:
+        with Session(self.engine) as db:
+            project_one = self.create_project(db, "stale-one")
+            project_two = self.create_project(db, "stale-two")
+            stale = create_workflow_run(db, project_one.id, "ticket_processing", {})
+            other = create_workflow_run(db, project_two.id, "ticket_processing", {})
+            stale.updated_at = datetime.utcnow() - timedelta(hours=1)
+            other.updated_at = datetime.utcnow() - timedelta(hours=1)
+            db.commit()
+
+            recovered = fail_stale_workflows(db, project_one.id, "ticket_processing", 900)
+
+            self.assertEqual(recovered, 1)
+            self.assertEqual(stale.status, "failed")
+            self.assertIn("stale execution timeout", stale.error_message)
+            self.assertEqual(other.status, "queued")
 
 
 if __name__ == "__main__":

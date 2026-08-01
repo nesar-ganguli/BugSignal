@@ -15,6 +15,7 @@ from app.services.code_indexing_service import index_codebase
 from app.services.embedding_service import EmbeddingDependencyError
 from app.services.github_repo_service import GitHubRepoImportError, clone_github_repo
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
+from app.services.rate_limit_service import enforce_expensive_rate_limit
 
 router = APIRouter(prefix="/codebase", tags=["codebase"])
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/codebase", tags=["codebase"])
 @router.post("/index", response_model=CodebaseIndexResponse)
 async def index_local_codebase(
     request: CodebaseIndexRequest,
+    _: None = Depends(enforce_expensive_rate_limit),
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(require_editor_context),
 ) -> CodebaseIndexResponse:
@@ -36,6 +38,7 @@ async def index_local_codebase(
 @router.post("/github/index", response_model=CodebaseIndexResponse)
 async def index_github_codebase(
     request: GitHubCodebaseIndexRequest,
+    _: None = Depends(enforce_expensive_rate_limit),
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(require_editor_context),
 ) -> CodebaseIndexResponse:

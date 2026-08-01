@@ -6,11 +6,13 @@ from app.repositories.workflow_repository import (
     count_workflow_runs,
     cancel_workflow,
     create_workflow_run,
+    fail_stale_workflows,
     get_active_workflow_run,
     get_workflow_run,
     list_workflow_runs,
     mark_workflow_dispatched,
 )
+from app.config import get_settings
 from app.schemas.workflow_schema import (
     TicketProcessingWorkflowRequest,
     WorkflowRunListResponse,
@@ -19,6 +21,7 @@ from app.schemas.workflow_schema import (
 from app.services.workflow_service import workflow_to_read
 from app.tasks.workflow_tasks import process_tickets_workflow
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
+from app.services.rate_limit_service import enforce_expensive_rate_limit
 
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -31,9 +34,16 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 )
 async def start_ticket_processing_workflow(
     request: TicketProcessingWorkflowRequest,
+    _: None = Depends(enforce_expensive_rate_limit),
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(require_editor_context),
 ) -> WorkflowRunRead:
+    fail_stale_workflows(
+        db,
+        tenant.project_id,
+        "ticket_processing",
+        get_settings().stale_workflow_timeout_seconds,
+    )
     active_workflow = get_active_workflow_run(db, tenant.project_id, "ticket_processing")
     if active_workflow is not None:
         return workflow_to_read(active_workflow)

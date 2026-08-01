@@ -1,0 +1,21 @@
+ticket_id,title,body,created_at,source,customer_plan,severity
+PRJ2-001,Search returns outdated results,"Recently updated products do not appear in search results for several hours.",2026-07-20T09:10:00Z,email,Business,high
+PRJ2-002,New articles missing from search,"Knowledge-base articles published this morning cannot be found through search.",2026-07-20T10:15:00Z,web,Pro,high
+PRJ2-003,Search index updates slowly,"Renamed customer records still appear under their previous names in search.",2026-07-20T11:30:00Z,chat,Enterprise,medium
+PRJ2-004,Deleted records remain searchable,"Records deleted yesterday continue to appear in global search results.",2026-07-20T13:05:00Z,email,Enterprise,high
+PRJ2-005,Search filters reset,"Selecting a status filter works initially, but the filter disappears when moving to page two.",2026-07-21T08:25:00Z,web,Business,medium
+PRJ2-006,Date filter gives wrong results,"Searching for orders from this month includes orders created last year.",2026-07-21T09:40:00Z,email,Pro,medium
+PRJ2-007,Search pagination repeats records,"The second results page contains many of the same records shown on the first page.",2026-07-21T11:10:00Z,chat,Business,low
+PRJ2-008,Export omits filtered rows,"Exporting filtered search results creates a CSV containing only the first page.",2026-07-21T14:35:00Z,email,Enterprise,high
+PRJ2-009,Notification emails sent twice,"Every assignment notification is delivered twice to the same recipient.",2026-07-22T08:15:00Z,email,Pro,medium
+PRJ2-010,Duplicate alert messages,"Users receive two identical alert emails whenever a report finishes.",2026-07-22T09:20:00Z,chat,Business,medium
+PRJ2-011,Disabled notifications still arrive,"I disabled weekly summaries, but the emails continue arriving every Monday.",2026-07-22T10:45:00Z,web,Pro,low
+PRJ2-012,Notification links open wrong record,"The link in an assignment email opens a different customer's record.",2026-07-22T13:30:00Z,email,Enterprise,high
+PRJ2-013,Comments disappear after saving,"A comment appears saved, but vanishes after the page is refreshed.",2026-07-23T08:40:00Z,web,Business,high
+PRJ2-014,Concurrent edits overwrite comments,"When two agents comment at the same time, only the last comment remains.",2026-07-23T09:55:00Z,email,Enterprise,critical
+PRJ2-015,Comment timestamps are incorrect,"New comments display a timestamp five hours earlier than the actual posting time.",2026-07-23T11:05:00Z,chat,Pro,low
+PRJ2-016,Mentions do not notify users,"Mentioning a teammate in a comment does not generate an email or in-app alert.",2026-07-23T14:20:00Z,web,Business,medium
+PRJ2-017,Report totals disagree with dashboard,"The monthly revenue report total is lower than the total shown on the dashboard.",2026-07-24T08:30:00Z,email,Enterprise,critical
+PRJ2-018,Scheduled report never completes,"Our nightly report remains in processing status until it is manually cancelled.",2026-07-24T09:45:00Z,web,Business,high
+PRJ2-019,PDF report has blank charts,"Downloaded PDF reports contain headings and tables, but every chart is blank.",2026-07-24T11:25:00Z,chat,Pro,medium
+PRJ2-020,Report timezone shifts daily totals,"Daily reports use UTC boundaries instead of our configured local timezone.",2026-07-24T15:10:00Z,email,Enterprise,high

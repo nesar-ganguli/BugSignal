@@ -31,6 +31,7 @@ from app.services.embedding_service import EmbeddingDependencyError
 from app.services.issue_drafting_service import IssueDraftingError, draft_issue_for_cluster
 from app.services.llm_client import LLMClient, LLMResponseError, LLMUnavailableError
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
+from app.services.rate_limit_service import enforce_expensive_rate_limit
 
 router = APIRouter(prefix="/clusters", tags=["clusters"])
 
@@ -45,7 +46,7 @@ async def get_clusters(db: Session = Depends(get_db), tenant: TenantContext = De
 
 
 @router.post("/rebuild", response_model=ClusterRunResponse)
-async def rebuild_clusters(db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> ClusterRunResponse:
+async def rebuild_clusters(_: None = Depends(enforce_expensive_rate_limit), db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> ClusterRunResponse:
     try:
         return rebuild_ticket_clusters(db, tenant.project_id)
     except (EmbeddingDependencyError, ClusteringDependencyError) as exc:
@@ -53,7 +54,7 @@ async def rebuild_clusters(db: Session = Depends(get_db), tenant: TenantContext 
 
 
 @router.post("/{cluster_id}/retrieve-code", response_model=CodeRetrievalResponse)
-async def retrieve_cluster_code(cluster_id: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> CodeRetrievalResponse:
+async def retrieve_cluster_code(cluster_id: int, _: None = Depends(enforce_expensive_rate_limit), db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> CodeRetrievalResponse:
     cluster = get_cluster(db, tenant.project_id, cluster_id)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found.")
@@ -67,7 +68,7 @@ async def retrieve_cluster_code(cluster_id: int, db: Session = Depends(get_db), 
 
 
 @router.post("/{cluster_id}/draft-issue", response_model=IssueDraftResponse)
-async def draft_cluster_issue(cluster_id: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> IssueDraftResponse:
+async def draft_cluster_issue(cluster_id: int, _: None = Depends(enforce_expensive_rate_limit), db: Session = Depends(get_db), tenant: TenantContext = Depends(require_editor_context)) -> IssueDraftResponse:
     cluster = get_cluster(db, tenant.project_id, cluster_id)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found.")

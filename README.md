@@ -141,6 +141,27 @@ celery -A app.celery_app.celery_app worker --loglevel=info --pool=solo --concurr
 Workflow state remains in the application database and is available through `GET /workflows` and
 `GET /workflows/{workflow_id}` even if the browser disconnects.
 
+### Operational health and logging
+
+The API emits structured JSON request logs and returns an `X-Request-ID` header. Clients may send
+their own `X-Request-ID` (up to 128 characters) to correlate frontend, API, and worker incidents.
+
+- `GET /health/live` confirms the API process is alive without checking dependencies.
+- `GET /health/ready` returns `200` only when PostgreSQL, Redis, and the configured Ollama model are ready.
+- `GET /health` remains the detailed Ollama status endpoint used by the dashboard.
+
+Queued or running workflows older than `STALE_WORKFLOW_TIMEOUT_SECONDS` are marked failed before a
+new workflow is accepted for that project, preventing abandoned jobs from blocking future runs.
+
+### Production security controls
+
+Set `ENVIRONMENT=production`, configure `ALLOWED_HOSTS` and `CORS_ORIGINS` explicitly, and terminate
+TLS at the load balancer or reverse proxy. Production mode disables OpenAPI documentation and adds
+HSTS alongside frame, MIME-sniffing, referrer, and browser-permission protections. Request bodies
+and ticket CSVs have configurable size limits. Workflow, indexing, retrieval, and drafting endpoints
+use a Redis-backed fixed-window rate limit keyed by a hashed client identity; `429` responses include a
+`Retry-After` header.
+
 ### Database migrations
 
 The API and utility scripts never create or alter tables automatically. Apply committed migrations

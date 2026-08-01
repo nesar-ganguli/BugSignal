@@ -6,8 +6,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "BugSignal AI"
+    environment: str = "development"
     api_prefix: str = ""
     frontend_origin: str = "http://localhost:5173"
+    cors_origins: str = ""
+    allowed_hosts: str = "localhost,127.0.0.1,testserver"
+    log_level: str = "INFO"
+    stale_workflow_timeout_seconds: int = 900
+    max_request_size_bytes: int = 10 * 1024 * 1024
+    max_ticket_upload_size_bytes: int = 5 * 1024 * 1024
+    rate_limit_enabled: bool = True
+    expensive_rate_limit_requests: int = 10
+    expensive_rate_limit_window_seconds: int = 60
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        configured = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        return configured or [self.frontend_origin]
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        return [item.strip() for item in self.allowed_hosts.split(",") if item.strip()]
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"

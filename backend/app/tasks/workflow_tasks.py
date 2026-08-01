@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from celery import Task
 
@@ -16,12 +17,16 @@ from app.repositories.workflow_repository import (
 from app.services.ticket_processing_service import process_ticket_batch
 
 
+logger = logging.getLogger("bugsignal.workflow")
+
+
 class WorkflowCancelled(RuntimeError):
     pass
 
 
 @celery_app.task(bind=True, max_retries=2, name="bugsignal.process_tickets")
 def process_tickets_workflow(self: Task, workflow_id: str) -> dict:
+    logger.info("Workflow task received", extra={"workflow_id": workflow_id})
     with SessionLocal() as db:
         workflow = get_workflow_run_by_id(db, workflow_id)
         if workflow is None:
@@ -50,9 +55,18 @@ def process_tickets_workflow(self: Task, workflow_id: str) -> dict:
                 )
             )
         except WorkflowCancelled:
+            logger.info("Workflow cancelled", extra={"workflow_id": workflow_id})
             return {"workflow_id": workflow_id, "status": "cancelled"}
         except Exception as exc:
             message = f"{type(exc).__name__}: {exc}"
+            logger.exception("Workflow execution failed", extra={"workflow_id": workflow_id})
+            # A flush/commit error leaves the session unusable until it is rolled
+            # back. Reload the workflow after rollback before persisting retry or
+            # terminal failure state.
+            db.rollback()
+            workflow = get_workflow_run_by_id(db, workflow_id)
+            if workflow is None:
+                raise
             if self.request.retries < self.max_retries:
                 mark_workflow_retrying(db, workflow, message)
                 raise self.retry(exc=exc, countdown=2 ** (self.request.retries + 1))
@@ -64,4 +78,5 @@ def process_tickets_workflow(self: Task, workflow_id: str) -> dict:
             return {"workflow_id": workflow_id, "status": "cancelled"}
         result_payload = result.model_dump(mode="json")
         complete_workflow(db, workflow, result_payload)
+        logger.info("Workflow completed", extra={"workflow_id": workflow_id})
         return {"workflow_id": workflow_id, "status": "completed", "result": result_payload}
