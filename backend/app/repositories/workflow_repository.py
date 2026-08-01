@@ -10,10 +10,11 @@ from app.models import WorkflowRun
 
 
 def create_workflow_run(
-    db: Session, workflow_type: str, workflow_input: dict[str, Any]
+    db: Session, project_id: int, workflow_type: str, workflow_input: dict[str, Any]
 ) -> WorkflowRun:
     workflow = WorkflowRun(
         id=str(uuid4()),
+        project_id=project_id,
         workflow_type=workflow_type,
         status="queued",
         current_step="queued",
@@ -26,24 +27,30 @@ def create_workflow_run(
     return workflow
 
 
-def get_workflow_run(db: Session, workflow_id: str) -> WorkflowRun | None:
+def get_workflow_run(db: Session, project_id: int, workflow_id: str) -> WorkflowRun | None:
+    return db.scalar(select(WorkflowRun).where(WorkflowRun.project_id == project_id, WorkflowRun.id == workflow_id))
+
+
+def get_workflow_run_by_id(db: Session, workflow_id: str) -> WorkflowRun | None:
+    """Internal worker lookup; external callers must use the project-scoped lookup."""
     return db.get(WorkflowRun, workflow_id)
 
 
-def list_workflow_runs(db: Session, limit: int = 20) -> list[WorkflowRun]:
-    statement = select(WorkflowRun).order_by(WorkflowRun.created_at.desc()).limit(limit)
+def list_workflow_runs(db: Session, project_id: int, limit: int = 20) -> list[WorkflowRun]:
+    statement = select(WorkflowRun).where(WorkflowRun.project_id == project_id).order_by(WorkflowRun.created_at.desc()).limit(limit)
     return list(db.scalars(statement).all())
 
 
-def count_workflow_runs(db: Session) -> int:
-    return db.scalar(select(func.count()).select_from(WorkflowRun)) or 0
+def count_workflow_runs(db: Session, project_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(WorkflowRun).where(WorkflowRun.project_id == project_id)) or 0
 
 
-def get_active_workflow_run(db: Session, workflow_type: str) -> WorkflowRun | None:
+def get_active_workflow_run(db: Session, project_id: int, workflow_type: str) -> WorkflowRun | None:
     statement = (
         select(WorkflowRun)
         .where(
             WorkflowRun.workflow_type == workflow_type,
+            WorkflowRun.project_id == project_id,
             WorkflowRun.status.in_(["queued", "running"]),
         )
         .order_by(WorkflowRun.created_at.desc())

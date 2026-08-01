@@ -3,10 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import Depends
 
-from app.api import auth, clusters, codebase, health, issues, tickets, workflows
+from app.api import auth, clusters, codebase, health, issues, projects, tickets, workflows
 from app.config import get_settings
 from app import models  # noqa: F401
-from app.services.auth_service import require_principal
+from app.services.tenant_service import require_tenant_context
 
 
 def create_app() -> FastAPI:
@@ -32,12 +32,13 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router)
-    protected = [Depends(require_principal)]
+    protected = [Depends(require_tenant_context)]
     app.include_router(tickets.router, dependencies=protected)
     app.include_router(clusters.router, dependencies=protected)
     app.include_router(codebase.router, dependencies=protected)
     app.include_router(issues.router, dependencies=protected)
     app.include_router(workflows.router, dependencies=protected)
+    app.include_router(projects.router, dependencies=protected)
 
     return app
 

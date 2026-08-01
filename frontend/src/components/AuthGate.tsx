@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { User } from "oidc-client-ts";
 
 import { oidcEnabled, userManager } from "../auth";
+import { getCurrentUser } from "../api/client";
 
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -19,7 +20,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
           await manager.signinRedirectCallback();
           window.history.replaceState({}, document.title, window.location.pathname);
         }
-        setUser(await manager.getUser());
+        const authenticatedUser = await manager.getUser();
+        setUser(authenticatedUser);
+        if (authenticatedUser && !authenticatedUser.expired) await getCurrentUser();
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "OIDC sign-in failed.");
       } finally {

@@ -8,55 +8,56 @@ from app.models import Ticket
 from app.schemas.ticket_schema import TicketCreate, TicketExtractionResult
 
 
-def count_tickets(db: Session) -> int:
-    return db.scalar(select(func.count()).select_from(Ticket)) or 0
+def count_tickets(db: Session, project_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(Ticket).where(Ticket.project_id == project_id)) or 0
 
 
-def list_tickets(db: Session, limit: int = 100, offset: int = 0) -> list[Ticket]:
+def list_tickets(db: Session, project_id: int, limit: int = 100, offset: int = 0) -> list[Ticket]:
     statement = (
         select(Ticket)
-        .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+        .where(Ticket.project_id == project_id).order_by(Ticket.created_at.desc(), Ticket.id.desc())
         .offset(offset)
         .limit(limit)
     )
     return list(db.scalars(statement).all())
 
 
-def list_clusterable_tickets(db: Session) -> list[Ticket]:
+def list_clusterable_tickets(db: Session, project_id: int) -> list[Ticket]:
     statement = (
         select(Ticket)
-        .where(Ticket.extraction_status == "completed")
+        .where(Ticket.project_id == project_id, Ticket.extraction_status == "completed")
         .order_by(Ticket.id.asc())
     )
     return list(db.scalars(statement).all())
 
 
-def list_tickets_for_cluster(db: Session, cluster_id: int) -> list[Ticket]:
+def list_tickets_for_cluster(db: Session, project_id: int, cluster_id: int) -> list[Ticket]:
     statement = (
         select(Ticket)
-        .where(Ticket.cluster_id == cluster_id)
+        .where(Ticket.project_id == project_id, Ticket.cluster_id == cluster_id)
         .order_by(Ticket.created_at.desc(), Ticket.id.desc())
     )
     return list(db.scalars(statement).all())
 
 
-def list_tickets_for_extraction(db: Session, limit: int = 50, force: bool = False) -> list[Ticket]:
-    statement = select(Ticket).order_by(Ticket.created_at.desc(), Ticket.id.desc()).limit(limit)
+def list_tickets_for_extraction(db: Session, project_id: int, limit: int = 50, force: bool = False) -> list[Ticket]:
+    statement = select(Ticket).where(Ticket.project_id == project_id).order_by(Ticket.created_at.desc(), Ticket.id.desc()).limit(limit)
     if not force:
         statement = statement.where(Ticket.extraction_status != "completed")
     return list(db.scalars(statement).all())
 
 
-def get_ticket_by_external_id(db: Session, external_ticket_id: str) -> Ticket | None:
-    return db.scalar(select(Ticket).where(Ticket.external_ticket_id == external_ticket_id))
+def get_ticket_by_external_id(db: Session, project_id: int, external_ticket_id: str) -> Ticket | None:
+    return db.scalar(select(Ticket).where(Ticket.project_id == project_id, Ticket.external_ticket_id == external_ticket_id))
 
 
-def upsert_ticket(db: Session, ticket_data: TicketCreate) -> tuple[Ticket, bool]:
-    ticket = get_ticket_by_external_id(db, ticket_data.external_ticket_id)
+def upsert_ticket(db: Session, project_id: int, ticket_data: TicketCreate) -> tuple[Ticket, bool]:
+    ticket = get_ticket_by_external_id(db, project_id, ticket_data.external_ticket_id)
     created = ticket is None
 
     if ticket is None:
         ticket = Ticket(
+            project_id=project_id,
             external_ticket_id=ticket_data.external_ticket_id,
             title=ticket_data.title,
             body=ticket_data.body,

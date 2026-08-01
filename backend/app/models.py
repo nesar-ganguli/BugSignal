@@ -8,9 +8,13 @@ from app.database import Base
 
 class Ticket(Base):
     __tablename__ = "tickets"
+    __table_args__ = (
+        UniqueConstraint("project_id", "external_ticket_id", name="uq_tickets_project_external_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    external_ticket_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    external_ticket_id: Mapped[str] = mapped_column(String(120), index=True)
     title: Mapped[str] = mapped_column(String(500))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -42,6 +46,7 @@ class Cluster(Base):
     __tablename__ = "clusters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     title: Mapped[str] = mapped_column(String(500))
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     ticket_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -63,6 +68,7 @@ class CodeChunk(Base):
     __tablename__ = "code_chunks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     repo_path: Mapped[str] = mapped_column(Text)
     file_path: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(80))
@@ -80,6 +86,7 @@ class RetrievedEvidence(Base):
     __tablename__ = "retrieved_evidence"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     cluster_id: Mapped[int] = mapped_column(ForeignKey("clusters.id"), index=True)
     code_chunk_id: Mapped[int] = mapped_column(ForeignKey("code_chunks.id"), index=True)
     relevance_score: Mapped[float] = mapped_column(Float)
@@ -91,6 +98,7 @@ class IssueDraft(Base):
     __tablename__ = "issue_drafts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     cluster_id: Mapped[int] = mapped_column(ForeignKey("clusters.id"), index=True)
     title: Mapped[str] = mapped_column(String(500))
     body_markdown: Mapped[str] = mapped_column(Text)
@@ -106,6 +114,7 @@ class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     workflow_type: Mapped[str] = mapped_column(String(120), index=True)
     status: Mapped[str] = mapped_column(String(40), default="queued", index=True)
     current_step: Mapped[str] = mapped_column(String(120), default="queued")
@@ -155,4 +164,15 @@ class OrganizationMembership(Base):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     role: Mapped[str] = mapped_column(String(80), default="member")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Project(Base):
+    __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("organization_id", "slug", name="uq_projects_org_slug"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(500))
+    slug: Mapped[str] = mapped_column(String(160))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

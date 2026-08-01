@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import CodeChunk
+from app.models import CodeChunk, Organization, Project
 from app.repositories.code_repository import (
     replace_code_search_index,
     search_code_chunks_bm25,
@@ -21,7 +21,14 @@ class CodeRetrievalServiceTests(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
 
         with Session(engine) as db:
+            organization = Organization(external_id="test", name="Test")
+            db.add(organization)
+            db.flush()
+            project = Project(organization_id=organization.id, name="Test", slug="test")
+            db.add(project)
+            db.flush()
             patient_search = CodeChunk(
+                project_id=project.id,
                 repo_path="/tmp/repo",
                 file_path="backend/routes/patients.py",
                 language="Python",
@@ -38,6 +45,7 @@ class CodeRetrievalServiceTests(unittest.TestCase):
                 embedding_id="patient-search",
             )
             payment = CodeChunk(
+                project_id=project.id,
                 repo_path="/tmp/repo",
                 file_path="backend/routes/payments.py",
                 language="Python",
@@ -55,10 +63,11 @@ class CodeRetrievalServiceTests(unittest.TestCase):
             )
             db.add_all([patient_search, payment])
             db.flush()
-            replace_code_search_index(db, "/tmp/repo", [patient_search, payment])
+            replace_code_search_index(db, project.id, "/tmp/repo", [patient_search, payment])
 
             results = search_code_chunks_bm25(
                 db,
+                project.id,
                 _build_bm25_query(["patient", "search"], ["FHIR patient search"]),
                 limit=5,
             )

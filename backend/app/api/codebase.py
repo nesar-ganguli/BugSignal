@@ -14,6 +14,7 @@ from app.services.chroma_service import ChromaDependencyError
 from app.services.code_indexing_service import index_codebase
 from app.services.embedding_service import EmbeddingDependencyError
 from app.services.github_repo_service import GitHubRepoImportError, clone_github_repo
+from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
 
 router = APIRouter(prefix="/codebase", tags=["codebase"])
 
@@ -22,9 +23,10 @@ router = APIRouter(prefix="/codebase", tags=["codebase"])
 async def index_local_codebase(
     request: CodebaseIndexRequest,
     db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_editor_context),
 ) -> CodebaseIndexResponse:
     try:
-        return index_codebase(db, request.local_repo_path)
+        return index_codebase(db, tenant.project_id, request.local_repo_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ChromaDependencyError, EmbeddingDependencyError) as exc:
@@ -35,10 +37,11 @@ async def index_local_codebase(
 async def index_github_codebase(
     request: GitHubCodebaseIndexRequest,
     db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_editor_context),
 ) -> CodebaseIndexResponse:
     try:
         repo_path = clone_github_repo(request.github_url, get_settings())
-        response = index_codebase(db, str(repo_path))
+        response = index_codebase(db, tenant.project_id, str(repo_path))
     except GitHubRepoImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -52,8 +55,8 @@ async def index_github_codebase(
 
 
 @router.get("/status", response_model=CodebaseStatusResponse)
-async def get_codebase_status(db: Session = Depends(get_db)) -> CodebaseStatusResponse:
-    indexed_files, indexed_chunks, last_indexed_at = codebase_status(db)
+async def get_codebase_status(db: Session = Depends(get_db), tenant: TenantContext = Depends(require_tenant_context)) -> CodebaseStatusResponse:
+    indexed_files, indexed_chunks, last_indexed_at = codebase_status(db, tenant.project_id)
     return CodebaseStatusResponse(
         indexed_files=indexed_files,
         indexed_chunks=indexed_chunks,

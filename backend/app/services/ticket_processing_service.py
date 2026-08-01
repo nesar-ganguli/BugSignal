@@ -23,6 +23,7 @@ ProgressCallback = Callable[[str, int], None]
 async def process_ticket_batch(
     db: Session,
     *,
+    project_id: int,
     limit: int,
     force: bool,
     progress: ProgressCallback | None = None,
@@ -33,7 +34,7 @@ async def process_ticket_batch(
         model=settings.ollama_model,
         timeout_seconds=90,
     )
-    tickets = list_tickets_for_extraction(db, limit=limit, force=force)
+    tickets = list_tickets_for_extraction(db, project_id, limit=limit, force=force)
     processed = 0
     errors: list[str] = []
 
@@ -63,7 +64,7 @@ async def process_ticket_batch(
     # batch. This is important when a retry batch contains only persistent failures.
     _report(progress, "clustering_tickets", 82)
     try:
-        cluster_result = rebuild_ticket_clusters(db)
+        cluster_result = rebuild_ticket_clusters(db, project_id)
     except (EmbeddingDependencyError, ClusteringDependencyError) as exc:
         errors.append(str(exc))
     else:
@@ -76,7 +77,7 @@ async def process_ticket_batch(
     return TicketProcessResponse(
         processed=processed,
         failed=len(errors),
-        total_tickets=count_tickets(db),
+        total_tickets=count_tickets(db, project_id),
         clusters_created=clusters_created,
         clustered_tickets=clustered_tickets,
         outlier_tickets=outlier_tickets,

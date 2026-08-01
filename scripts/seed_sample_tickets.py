@@ -13,6 +13,8 @@ sys.path.append(str(BACKEND_DIR))
 from app.database import SessionLocal  # noqa: E402
 from app.repositories.ticket_repository import count_tickets, upsert_ticket  # noqa: E402
 from app.services.ticket_csv_service import parse_ticket_csv  # noqa: E402
+from app.models import Project  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 
 def main() -> None:
@@ -21,14 +23,17 @@ def main() -> None:
     inserted = 0
     updated = 0
     with SessionLocal() as db:
+        project = db.scalar(select(Project).order_by(Project.id.asc()).limit(1))
+        if project is None:
+            raise SystemExit("No project exists. Run `alembic upgrade head` first.")
         for ticket_data in parse_result.tickets:
-            _, created = upsert_ticket(db, ticket_data)
+            _, created = upsert_ticket(db, project.id, ticket_data)
             if created:
                 inserted += 1
             else:
                 updated += 1
         db.commit()
-        total = count_tickets(db)
+        total = count_tickets(db, project.id)
 
     print(
         f"Seeded {inserted} new tickets, updated {updated}, skipped {parse_result.skipped}. "

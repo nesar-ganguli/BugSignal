@@ -62,23 +62,23 @@ class RetrievalCandidate:
         return "semantic"
 
 
-def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalResponse:
-    tickets = list_tickets_for_cluster(db, cluster.id)
+def retrieve_code_for_cluster(db: Session, project_id: int, cluster: Cluster) -> CodeRetrievalResponse:
+    tickets = list_tickets_for_cluster(db, project_id, cluster.id)
     query, terms, exact_terms = build_cluster_code_query(cluster, tickets)
 
     if not query.strip():
         raise CodeRetrievalError("Cluster does not have enough ticket context for code retrieval.")
 
-    all_chunks = list_code_chunks(db)
+    all_chunks = list_code_chunks(db, project_id)
     if not all_chunks:
         raise CodeRetrievalError("No indexed code chunks found. Index a codebase before retrieving code.")
 
     candidates: dict[int, RetrievalCandidate] = {}
-    _merge_semantic_candidates(candidates, query, db)
-    _merge_bm25_candidates(candidates, db, terms, exact_terms)
+    _merge_semantic_candidates(candidates, query, db, project_id)
+    _merge_bm25_candidates(candidates, db, project_id, terms, exact_terms)
 
     if not candidates:
-        clear_retrieved_evidence_for_cluster(db, cluster.id)
+        clear_retrieved_evidence_for_cluster(db, project_id, cluster.id)
         db.commit()
         return CodeRetrievalResponse(
             cluster_id=cluster.id,
@@ -87,7 +87,7 @@ def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalRes
             message="No relevant code snippets found.",
         )
 
-    chunks_by_id = get_code_chunks_by_ids(db, list(candidates))
+    chunks_by_id = get_code_chunks_by_ids(db, project_id, list(candidates))
     _add_exact_match_boosts(candidates, chunks_by_id, exact_terms)
     top_candidates = sorted(
         candidates.values(),
@@ -95,7 +95,7 @@ def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalRes
         reverse=True,
     )[:TOP_K_FINAL]
 
-    clear_retrieved_evidence_for_cluster(db, cluster.id)
+    clear_retrieved_evidence_for_cluster(db, project_id, cluster.id)
     snippets: list[CodeSnippetRead] = []
     for candidate in top_candidates:
         chunk = chunks_by_id.get(candidate.code_chunk_id)
@@ -104,6 +104,7 @@ def retrieve_code_for_cluster(db: Session, cluster: Cluster) -> CodeRetrievalRes
         reason = _candidate_reason(candidate)
         evidence = add_retrieved_evidence(
             db,
+            project_id=project_id,
             cluster_id=cluster.id,
             code_chunk_id=chunk.id,
             relevance_score=candidate.final_score,
@@ -170,12 +171,13 @@ def snippets_from_retrieved_rows(rows: list[tuple]) -> list[CodeSnippetRead]:
     return snippets
 
 
-def _merge_semantic_candidates(candidates: dict[int, RetrievalCandidate], query: str, db: Session) -> None:
+def _merge_semantic_candidates(candidates: dict[int, RetrievalCandidate], query: str, db: Session, project_id: int) -> None:
     collection = get_code_collection()
     query_embedding = EmbeddingService().embed_texts([query])[0].tolist()
     result = collection.query(
         query_embeddings=[query_embedding],
         n_results=TOP_K_SEMANTIC,
+        where={"project_id": project_id},
         include=["distances", "metadatas"],
     )
 
@@ -193,11 +195,12 @@ def _merge_semantic_candidates(candidates: dict[int, RetrievalCandidate], query:
 def _merge_bm25_candidates(
     candidates: dict[int, RetrievalCandidate],
     db: Session,
+    project_id: int,
     terms: list[str],
     exact_terms: list[str],
 ) -> None:
     bm25_query = _build_bm25_query(terms, exact_terms)
-    for result in search_code_chunks_bm25(db, bm25_query, TOP_K_BM25):
+    for result in search_code_chunks_bm25(db, project_id, bm25_query, TOP_K_BM25):
         candidate = candidates.setdefault(
             result.code_chunk_id,
             RetrievalCandidate(code_chunk_id=result.code_chunk_id),

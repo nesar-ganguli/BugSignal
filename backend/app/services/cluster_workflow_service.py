@@ -9,10 +9,10 @@ from app.services.embedding_service import EmbeddingService
 from app.services.priority_service import score_cluster_priority
 
 
-def rebuild_ticket_clusters(db: Session) -> ClusterRunResponse:
-    tickets = list_clusterable_tickets(db)
+def rebuild_ticket_clusters(db: Session, project_id: int) -> ClusterRunResponse:
+    tickets = list_clusterable_tickets(db, project_id)
     if not tickets:
-        clear_clusters(db)
+        clear_clusters(db, project_id)
         db.commit()
         return ClusterRunResponse(
             clusters_created=0,
@@ -26,7 +26,7 @@ def rebuild_ticket_clusters(db: Session) -> ClusterRunResponse:
     embeddings = embedding_service.embed_texts(texts)
     clustering_result = cluster_tickets(tickets, embeddings)
 
-    clear_clusters(db)
+    clear_clusters(db, project_id)
     clusters_created = 0
 
     for assignment in clustering_result.assignments:
@@ -35,6 +35,7 @@ def rebuild_ticket_clusters(db: Session) -> ClusterRunResponse:
         priority_result = score_cluster_priority(assignment.tickets)
         cluster = create_cluster(
             db,
+            project_id=project_id,
             title=assignment.title,
             summary=assignment.summary,
             ticket_count=ticket_count,

@@ -18,6 +18,7 @@ from app.schemas.workflow_schema import (
 )
 from app.services.workflow_service import workflow_to_read
 from app.tasks.workflow_tasks import process_tickets_workflow
+from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
 
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -31,12 +32,13 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 async def start_ticket_processing_workflow(
     request: TicketProcessingWorkflowRequest,
     db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_editor_context),
 ) -> WorkflowRunRead:
-    active_workflow = get_active_workflow_run(db, "ticket_processing")
+    active_workflow = get_active_workflow_run(db, tenant.project_id, "ticket_processing")
     if active_workflow is not None:
         return workflow_to_read(active_workflow)
 
-    workflow = create_workflow_run(db, "ticket_processing", request.model_dump())
+    workflow = create_workflow_run(db, tenant.project_id, "ticket_processing", request.model_dump())
     try:
         task = process_tickets_workflow.delay(workflow.id)
     except Exception as exc:
@@ -51,17 +53,17 @@ async def start_ticket_processing_workflow(
 
 @router.get("", response_model=WorkflowRunListResponse)
 async def get_workflows(
-    limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)
+    limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db), tenant: TenantContext = Depends(require_tenant_context)
 ) -> WorkflowRunListResponse:
     return WorkflowRunListResponse(
-        items=[workflow_to_read(item) for item in list_workflow_runs(db, limit)],
-        total=count_workflow_runs(db),
+        items=[workflow_to_read(item) for item in list_workflow_runs(db, tenant.project_id, limit)],
+        total=count_workflow_runs(db, tenant.project_id),
     )
 
 
 @router.get("/{workflow_id}", response_model=WorkflowRunRead)
-async def get_workflow(workflow_id: str, db: Session = Depends(get_db)) -> WorkflowRunRead:
-    workflow = get_workflow_run(db, workflow_id)
+async def get_workflow(workflow_id: str, db: Session = Depends(get_db), tenant: TenantContext = Depends(require_tenant_context)) -> WorkflowRunRead:
+    workflow = get_workflow_run(db, tenant.project_id, workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found.")
     return workflow_to_read(workflow)
@@ -69,9 +71,11 @@ async def get_workflow(workflow_id: str, db: Session = Depends(get_db)) -> Workf
 
 @router.post("/{workflow_id}/cancel", response_model=WorkflowRunRead)
 async def cancel_running_workflow(
-    workflow_id: str, db: Session = Depends(get_db)
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_editor_context),
 ) -> WorkflowRunRead:
-    workflow = get_workflow_run(db, workflow_id)
+    workflow = get_workflow_run(db, tenant.project_id, workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found.")
     if workflow.status in {"completed", "failed", "cancelled"}:
