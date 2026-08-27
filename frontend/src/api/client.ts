@@ -46,6 +46,8 @@ export type UploadTicketsResponse = {
   status: string;
   message: string;
   errors: string[];
+  workflow_id: string | null;
+  workflow_status: string | null;
 };
 
 export type Ticket = {
@@ -90,7 +92,7 @@ export type ProcessTicketsResponse = {
   errors: string[];
 };
 
-export type WorkflowStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type WorkflowStatus = "queued" | "running" | "waiting_for_codebase" | "completed" | "failed" | "cancelled";
 
 export type WorkflowRun = {
   id: string;

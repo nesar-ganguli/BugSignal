@@ -28,7 +28,7 @@ async def draft_issue_for_cluster(db: Session, project_id: int, cluster: Cluster
     prompt_rows = retrieved_rows[:5]
     prompt = _build_issue_prompt(cluster, tickets, prompt_rows)
     raw = await llm_client.generate_json(prompt)
-    structured = _parse_llm_result(raw)
+    structured = _parse_llm_result(raw, cluster)
     warnings = validate_issue_draft_evidence(structured, tickets, prompt_rows)
     body_markdown = _render_issue_markdown(structured, tickets, warnings)
 
@@ -75,6 +75,8 @@ Non-negotiable rules:
 - relevant_files may only include file_path values from the retrieved code evidence.
 - Do not invent stack traces, file names, functions, endpoints, platforms, versions, or logs.
 - Needs engineer verification is always Yes.
+- confidence is required and must be exactly one of: "Low", "Medium", or "High".
+- priority_label is required and must exactly match the cluster priority shown below.
 - Return only valid JSON.
 
 Required JSON shape:
@@ -162,9 +164,15 @@ def _code_payload(evidence: RetrievedEvidence, chunk: CodeChunk) -> dict[str, An
     }
 
 
-def _parse_llm_result(raw: dict[str, Any]) -> IssueDraftLLMResult:
+def _parse_llm_result(raw: dict[str, Any], cluster: Cluster) -> IssueDraftLLMResult:
+    normalized = dict(raw)
+    # Small local models occasionally omit trailing fields. Confidence defaults
+    # conservatively, while priority remains deterministic from BugSignal's
+    # explainable cluster scoring rather than model output.
+    normalized.setdefault("confidence", "Low")
+    normalized["priority_label"] = cluster.priority_label
     try:
-        return IssueDraftLLMResult.model_validate(raw)
+        return IssueDraftLLMResult.model_validate(normalized)
     except ValidationError as exc:
         raise LLMResponseError(f"Ollama issue draft JSON did not match the required schema: {exc}") from exc
 

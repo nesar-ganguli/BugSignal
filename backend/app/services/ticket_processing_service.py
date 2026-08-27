@@ -20,6 +20,44 @@ from app.services.ticket_extraction_service import TicketExtractionError, extrac
 ProgressCallback = Callable[[str, int], None]
 
 
+async def extract_pending_ticket_batch(
+    db: Session,
+    *,
+    project_id: int,
+    limit: int,
+) -> tuple[int, int, int, list[str]]:
+    """Extract one pending/stale batch; failed rows are not retried indefinitely."""
+    settings = get_settings()
+    llm_client = LLMClient(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+        timeout_seconds=90,
+    )
+    tickets = list_tickets_for_extraction(
+        db,
+        project_id,
+        limit=limit,
+        force=False,
+        include_failed=False,
+    )
+    processed = 0
+    errors: list[str] = []
+    for ticket in tickets:
+        try:
+            extraction = await extract_ticket_fields(ticket, llm_client)
+        except LLMUnavailableError:
+            raise
+        except (LLMResponseError, TicketExtractionError) as exc:
+            error_message = str(exc)
+            mark_ticket_extraction_failed(ticket, error_message)
+            errors.append(error_message)
+        else:
+            apply_ticket_extraction(ticket, extraction)
+            processed += 1
+        db.commit()
+    return len(tickets), processed, len(errors), errors
+
+
 async def process_ticket_batch(
     db: Session,
     *,

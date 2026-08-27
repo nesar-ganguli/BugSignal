@@ -11,7 +11,7 @@ type ClusterListProps = {
 
 export function ClusterList({ clusters, selectedClusterId, onSelectCluster }: ClusterListProps) {
   return (
-    <section className="rounded-lg border border-line bg-white p-5 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-ink">Cluster Review</h2>
@@ -19,57 +19,47 @@ export function ClusterList({ clusters, selectedClusterId, onSelectCluster }: Cl
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded border border-line">
-        <table className="min-w-full divide-y divide-line text-left text-sm">
-          <thead className="bg-panel text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-semibold">Cluster</th>
-              <th className="px-4 py-3 font-semibold">Tickets</th>
-              <th className="px-4 py-3 font-semibold">Priority</th>
-              <th className="px-4 py-3 font-semibold">Confidence</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Review</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line bg-white">
-            {clusters.length ? (
-              clusters.map((cluster) => (
-              <tr key={cluster.id} className={selectedClusterId === cluster.id ? "bg-teal-50/50" : undefined}>
-                <td className="min-w-[220px] px-4 py-3">
-                  <div className="font-medium text-ink">{cluster.title}</div>
-                  {cluster.suspected_feature_area ? (
-                    <div className="mt-1 text-xs text-slate-500">{cluster.suspected_feature_area}</div>
-                  ) : null}
-                </td>
-                <td className="px-4 py-3 text-slate-600">{cluster.ticket_count}</td>
-                <td className="px-4 py-3">
+      <div className="mt-4 grid gap-2">
+        {clusters.length ? (
+          clusters.map((cluster) => {
+            const selected = selectedClusterId === cluster.id;
+            return (
+              <button
+                key={cluster.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onSelectCluster(cluster.id)}
+                className={`min-w-0 rounded border p-3 text-left transition ${
+                  selected
+                    ? "border-signal bg-teal-50 shadow-sm"
+                    : "border-line bg-white hover:border-slate-300 hover:bg-panel"
+                }`}
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="break-words text-sm font-semibold text-ink">{cluster.title}</div>
+                    {cluster.suspected_feature_area ? (
+                      <div className="mt-1 break-words text-xs text-slate-500">{cluster.suspected_feature_area}</div>
+                    ) : null}
+                  </div>
+                  <ArrowRight className={`mt-0.5 shrink-0 ${selected ? "text-signal" : "text-slate-400"}`} size={16} aria-hidden="true" />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <PriorityBadge label={cluster.priority_label} />
-                </td>
-                <td className="px-4 py-3 text-slate-600">{Math.round(cluster.confidence_score * 100)}%</td>
-                <td className="px-4 py-3">
                   <StatusBadge status={cluster.status} />
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    className="inline-flex h-8 w-8 items-center justify-center rounded border border-line text-slate-500 transition hover:border-signal hover:text-signal"
-                    type="button"
-                    aria-label={`Review ${cluster.title}`}
-                    onClick={() => onSelectCluster(cluster.id)}
-                  >
-                    <ArrowRight size={15} aria-hidden="true" />
-                  </button>
-                </td>
-              </tr>
-              ))
-            ) : (
-              <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
-                  Process tickets to generate HDBSCAN clusters.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                  <span><strong className="text-ink">{cluster.ticket_count}</strong> tickets</span>
+                  <span><strong className="text-ink">{Math.round(cluster.confidence_score * 100)}%</strong> confidence</span>
+                </div>
+              </button>
+            );
+          })
+        ) : (
+          <div className="rounded border border-dashed border-line px-4 py-8 text-center text-sm text-slate-500">
+            Process tickets to generate HDBSCAN clusters.
+          </div>
+        )}
       </div>
     </section>
   );

@@ -57,6 +57,8 @@ class TicketUploadResponse(BaseModel):
     status: str
     message: str
     errors: list[str] = []
+    workflow_id: str | None = None
+    workflow_status: str | None = None
 
 
 class TicketExtractionResult(BaseModel):

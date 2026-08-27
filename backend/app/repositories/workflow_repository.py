@@ -51,7 +51,7 @@ def get_active_workflow_run(db: Session, project_id: int, workflow_type: str) ->
         .where(
             WorkflowRun.workflow_type == workflow_type,
             WorkflowRun.project_id == project_id,
-            WorkflowRun.status.in_(["queued", "running"]),
+            WorkflowRun.status.in_(["queued", "running", "waiting_for_codebase"]),
         )
         .order_by(WorkflowRun.created_at.desc())
         .limit(1)
@@ -88,6 +88,24 @@ def fail_stale_workflows(
 
 def mark_workflow_dispatched(db: Session, workflow: WorkflowRun, task_id: str) -> None:
     workflow.queue_task_id = task_id
+    workflow.updated_at = datetime.utcnow()
+    db.commit()
+
+
+def pause_workflow_for_codebase(db: Session, workflow: WorkflowRun, result: dict[str, Any]) -> None:
+    workflow.status = "waiting_for_codebase"
+    workflow.current_step = "waiting_for_codebase"
+    workflow.progress_percent = 55
+    workflow.result_json = json.dumps(result)
+    workflow.error_message = None
+    workflow.updated_at = datetime.utcnow()
+    db.commit()
+
+
+def requeue_workflow(db: Session, workflow: WorkflowRun, step: str = "queued") -> None:
+    workflow.status = "queued"
+    workflow.current_step = step
+    workflow.error_message = None
     workflow.updated_at = datetime.utcnow()
     db.commit()
 

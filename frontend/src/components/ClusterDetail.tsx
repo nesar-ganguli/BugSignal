@@ -10,6 +10,7 @@ type ClusterDetailProps = {
   isDraftingIssue: boolean;
   isApprovingIssue: boolean;
   readOnly?: boolean;
+  mode?: "full" | "cluster" | "evidence";
   onRetrieveCode: (clusterId: number) => void;
   onDraftIssue: (clusterId: number) => void;
   onApproveIssue: (issueId: number) => void;
@@ -22,13 +23,14 @@ export function ClusterDetail({
   isDraftingIssue,
   isApprovingIssue,
   readOnly = false,
+  mode = "full",
   onRetrieveCode,
   onDraftIssue,
   onApproveIssue,
 }: ClusterDetailProps) {
   if (isLoading) {
     return (
-      <section className="rounded-lg border border-line bg-white p-5 shadow-sm">
+      <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-sm">
         <p className="text-sm text-slate-600">Loading cluster detail...</p>
       </section>
     );
@@ -36,7 +38,7 @@ export function ClusterDetail({
 
   if (!detail) {
     return (
-      <section className="rounded-lg border border-line bg-white p-5 shadow-sm">
+      <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold text-ink">Cluster Detail</h2>
         <p className="mt-1 text-sm text-slate-600">Select a cluster to review priority, cohesion, and tickets.</p>
       </section>
@@ -47,7 +49,7 @@ export function ClusterDetail({
   const hasRetrievedEvidence = retrieved_code_snippets.length > 0;
 
   return (
-    <section className="rounded-lg border border-line bg-white p-5 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-ink">{cluster.title}</h2>
@@ -55,22 +57,26 @@ export function ClusterDetail({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PriorityBadge label={cluster.priority_label} />
-          <button
-            className="rounded border border-line px-3 py-2 text-sm font-semibold text-ink transition hover:border-signal hover:text-signal disabled:cursor-not-allowed disabled:text-slate-400"
-            type="button"
-            onClick={() => onRetrieveCode(cluster.id)}
-            disabled={readOnly || isRetrievingCode}
-          >
-            {isRetrievingCode ? "Retrieving..." : "Retrieve Code"}
-          </button>
-          <button
-            className="rounded bg-signal px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-            type="button"
-            onClick={() => onDraftIssue(cluster.id)}
-            disabled={readOnly || isDraftingIssue || !hasRetrievedEvidence}
-          >
-            {isDraftingIssue ? "Drafting..." : "Draft Issue"}
-          </button>
+          {mode !== "cluster" ? (
+            <>
+              <button
+                className="rounded border border-line px-3 py-2 text-sm font-semibold text-ink transition hover:border-signal hover:text-signal disabled:cursor-not-allowed disabled:text-slate-400"
+                type="button"
+                onClick={() => onRetrieveCode(cluster.id)}
+                disabled={readOnly || isRetrievingCode}
+              >
+                {isRetrievingCode ? "Retrieving..." : "Retrieve Code"}
+              </button>
+              <button
+                className="rounded bg-signal px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                type="button"
+                onClick={() => onDraftIssue(cluster.id)}
+                disabled={readOnly || isDraftingIssue || !hasRetrievedEvidence}
+              >
+                {isDraftingIssue ? "Drafting..." : "Draft Issue"}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -81,7 +87,7 @@ export function ClusterDetail({
         <Metric label="Confidence" value={`${Math.round(cluster.confidence_score * 100)}%`} />
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(220px,320px)_1fr]">
+      {mode !== "evidence" ? <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(220px,320px)_1fr]">
         <div>
           <h3 className="text-sm font-semibold text-ink">Priority Breakdown</h3>
           <div className="mt-3 grid gap-2">
@@ -121,20 +127,20 @@ export function ClusterDetail({
             </table>
           </div>
         </div>
-      </div>
+      </div> : null}
 
-      <div className="mt-5">
+      {mode !== "cluster" ? <div className="mt-5">
         <EvidencePanel snippets={retrieved_code_snippets} />
-      </div>
+      </div> : null}
 
-      <div className="mt-5">
+      {mode !== "cluster" ? <div className="mt-5">
         <IssueDraftPanel
           draft={issue_draft}
           isApprovingIssue={isApprovingIssue}
           readOnly={readOnly}
           onApproveIssue={onApproveIssue}
         />
-      </div>
+      </div> : null}
     </section>
   );
 }

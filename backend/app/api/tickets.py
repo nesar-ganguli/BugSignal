@@ -19,6 +19,7 @@ from app.services.ticket_processing_service import process_ticket_batch
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
 from app.config import get_settings
 from app.services.rate_limit_service import enforce_expensive_rate_limit
+from app.services.triage_workflow_service import queue_triage_workflow
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -51,6 +52,12 @@ async def upload_tickets(file: UploadFile = File(...), db: Session = Depends(get
 
     db.commit()
     total_tickets = count_tickets(db, tenant.project_id)
+    workflow = None
+    workflow_error = None
+    try:
+        workflow = queue_triage_workflow(db, tenant.project_id)
+    except Exception:
+        workflow_error = " Tickets were saved, but the automated triage workflow could not be queued."
 
     return TicketUploadResponse(
         filename=file.filename,
@@ -60,8 +67,10 @@ async def upload_tickets(file: UploadFile = File(...), db: Session = Depends(get
         skipped=parse_result.skipped,
         total_tickets=total_tickets,
         status="accepted",
-        message=f"Imported {inserted} new tickets and updated {updated} existing tickets.",
+        message=f"Imported {inserted} new tickets and updated {updated} existing tickets.{workflow_error or ' Automated triage was queued.'}",
         errors=parse_result.errors,
+        workflow_id=workflow.id if workflow else None,
+        workflow_status=workflow.status if workflow else None,
     )
 
 

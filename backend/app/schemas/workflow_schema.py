@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-WorkflowStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+WorkflowStatus = Literal["queued", "running", "waiting_for_codebase", "completed", "failed", "cancelled"]
 
 
 class TicketProcessingWorkflowRequest(BaseModel):

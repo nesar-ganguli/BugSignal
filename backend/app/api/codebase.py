@@ -16,6 +16,7 @@ from app.services.embedding_service import EmbeddingDependencyError
 from app.services.github_repo_service import GitHubRepoImportError, clone_github_repo
 from app.services.tenant_service import TenantContext, require_editor_context, require_tenant_context
 from app.services.rate_limit_service import enforce_expensive_rate_limit
+from app.services.triage_workflow_service import resume_triage_after_codebase
 
 router = APIRouter(prefix="/codebase", tags=["codebase"])
 
@@ -28,11 +29,16 @@ async def index_local_codebase(
     tenant: TenantContext = Depends(require_editor_context),
 ) -> CodebaseIndexResponse:
     try:
-        return index_codebase(db, tenant.project_id, request.local_repo_path)
+        response = index_codebase(db, tenant.project_id, request.local_repo_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ChromaDependencyError, EmbeddingDependencyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    try:
+        resume_triage_after_codebase(db, tenant.project_id)
+    except Exception:
+        response.message += " Indexing completed, but the triage workflow could not be resumed automatically."
+    return response
 
 
 @router.post("/github/index", response_model=CodebaseIndexResponse)
@@ -54,6 +60,10 @@ async def index_github_codebase(
 
     response.source_url = request.github_url
     response.message = f"Cloned and indexed GitHub repo. {response.message}"
+    try:
+        resume_triage_after_codebase(db, tenant.project_id)
+    except Exception:
+        response.message += " The triage workflow could not be resumed automatically."
     return response
 
 

@@ -33,6 +33,21 @@ import { TicketUpload } from "../components/TicketUpload";
 import { TicketTable } from "../components/TicketTable";
 import { CodebaseIndexPage } from "./CodebaseIndexPage";
 
+type DashboardTab = "overview" | "tickets" | "clusters" | "codebase" | "evidence";
+
+const dashboardTabs: { id: DashboardTab; label: string; step?: number }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "tickets", label: "Tickets", step: 1 },
+  { id: "clusters", label: "Clusters", step: 2 },
+  { id: "codebase", label: "Codebase", step: 3 },
+  { id: "evidence", label: "Evidence & Issues", step: 4 },
+];
+
+function initialDashboardTab(): DashboardTab {
+  const value = window.location.hash.replace("#", "") as DashboardTab;
+  return dashboardTabs.some((tab) => tab.id === value) ? value : "overview";
+}
+
 function HealthPill({ health }: { health: HealthResponse | null }) {
   if (!health) {
     return <span className="rounded border border-line bg-white px-3 py-1 text-sm text-slate-600">Backend checking</span>;
@@ -53,6 +68,7 @@ function HealthPill({ health }: { health: HealthResponse | null }) {
 }
 
 export function Dashboard() {
+  const [activeTab, setActiveTab] = useState<DashboardTab>(initialDashboardTab);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -130,6 +146,23 @@ export function Dashboard() {
     if (selectedClusterId) loadClusterDetail(selectedClusterId);
   };
 
+  const handleTicketsUploaded = (result: { workflow_id: string | null }) => {
+    refreshTickets();
+    if (result.workflow_id) {
+      getWorkflow(result.workflow_id).then((workflow) => {
+        setActiveWorkflow(workflow);
+        setIsProcessing(["queued", "running"].includes(workflow.status));
+      }).catch(() => undefined);
+    }
+  };
+
+  const handleCodebaseStatusChange = (status: CodebaseStatusResponse) => {
+    setCodebaseStatus(status);
+    getWorkflows(1).then((response) => {
+      if (response.items[0]) setActiveWorkflow(response.items[0]);
+    }).catch(() => undefined);
+  };
+
   const loadClusterDetail = (clusterId: number) => {
     setSelectedClusterId(clusterId);
     setIsClusterDetailLoading(true);
@@ -178,6 +211,12 @@ export function Dashboard() {
             refreshTickets();
             refreshClusters();
             refreshCodebaseStatus();
+          } else if (workflow.status === "waiting_for_codebase") {
+            setIsProcessing(false);
+            setProcessMessage(workflow.result?.message ?? "Ticket processing is complete. Add a repository to continue.");
+            refreshTickets();
+            refreshClusters();
+            refreshCodebaseStatus();
           } else if (workflow.status === "failed" || workflow.status === "cancelled") {
             setIsProcessing(false);
             setProcessError(workflow.error_message ?? `Workflow ${workflow.status}.`);
@@ -202,6 +241,11 @@ export function Dashboard() {
   const switchProject = (projectId: number) => {
     window.localStorage.setItem("bugsignal_project_id", String(projectId));
     window.location.reload();
+  };
+
+  const selectTab = (tab: DashboardTab) => {
+    setActiveTab(tab);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${tab}`);
   };
 
   const runProjectCreation = async () => {
@@ -405,88 +449,117 @@ export function Dashboard() {
           </div>
         ) : null}
 
-        {activeWorkflow ? (
-          <WorkflowRunPanel
-            workflow={activeWorkflow}
-            isCancelling={isCancellingWorkflow}
-            readOnly={!canEdit}
-            onCancel={runWorkflowCancellation}
-          />
+        <nav className="overflow-x-auto rounded-lg border border-line bg-white p-2 shadow-sm" aria-label="BugSignal workflow">
+          <div className="flex min-w-max gap-1" role="tablist">
+            {dashboardTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                onClick={() => selectTab(tab.id)}
+                className={`inline-flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === tab.id ? "bg-ink text-white" : "text-slate-600 hover:bg-panel hover:text-ink"
+                }`}
+              >
+                {tab.step ? <span className={`grid h-5 w-5 place-items-center rounded-full text-xs ${activeTab === tab.id ? "bg-white/20" : "bg-slate-200"}`}>{tab.step}</span> : null}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {activeWorkflow?.status === "waiting_for_codebase" ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 sm:flex-row sm:items-center sm:justify-between">
+            <span>Ticket extraction and clustering are complete. Add this project's repository to continue evidence retrieval and issue drafting automatically.</span>
+            <button type="button" className="shrink-0 rounded bg-ink px-3 py-2 font-semibold text-white" onClick={() => selectTab("codebase")}>Add repository</button>
+          </div>
         ) : null}
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {overviewCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <div key={card.label} className="rounded-lg border border-line bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-slate-600">{card.label}</span>
-                  <Icon size={18} className="text-signal" aria-hidden="true" />
-                </div>
-                <div className="mt-3 text-2xl font-bold text-ink">{card.value}</div>
-              </div>
-            );
-          })}
-        </section>
+        {activeTab === "overview" ? (
+          <div className="grid gap-6" role="tabpanel">
+            <TabHeading title="Project Overview" description="Monitor the current project and follow progress through the triage workflow." />
+            {activeWorkflow ? (
+              <WorkflowRunPanel workflow={activeWorkflow} isCancelling={isCancellingWorkflow} readOnly={!canEdit} onCancel={runWorkflowCancellation} />
+            ) : null}
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {overviewCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.label} className="rounded-lg border border-line bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-slate-600">{card.label}</span>
+                      <Icon size={18} className="text-signal" aria-hidden="true" />
+                    </div>
+                    <div className="mt-3 text-2xl font-bold text-ink">{card.value}</div>
+                  </div>
+                );
+              })}
+            </section>
+            <WorkflowStrip ticketTotal={ticketTotal} extractedTickets={extractedTickets} clusterTotal={clusterTotal} indexedChunks={codebaseStatus?.indexed_chunks ?? 0} evidenceCount={clusterDetail?.retrieved_code_snippets.length ?? 0} issueStatus={clusterDetail?.issue_draft?.status ?? null} />
+          </div>
+        ) : null}
 
-        <WorkflowStrip
-          ticketTotal={ticketTotal}
-          extractedTickets={extractedTickets}
-          clusterTotal={clusterTotal}
-          indexedChunks={codebaseStatus?.indexed_chunks ?? 0}
-          evidenceCount={clusterDetail?.retrieved_code_snippets.length ?? 0}
-          issueStatus={clusterDetail?.issue_draft?.status ?? null}
-        />
-
-        <div className="grid gap-6 lg:grid-cols-[minmax(320px,420px)_1fr]">
-          <TicketUpload disabled={!canEdit} onUploaded={refreshTickets} />
-          <section className="grid gap-6">
-            <div className="rounded-lg border border-line bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">Structured Extraction</h2>
-                  <p className="text-sm text-slate-600">Run Ollama JSON extraction for pending tickets.</p>
+        {activeTab === "tickets" ? (
+          <div className="grid gap-6" role="tabpanel">
+            <TabHeading title="1. Import and Process Tickets" description="Upload support data, then run structured extraction and clustering." />
+            {activeWorkflow ? <WorkflowRunPanel workflow={activeWorkflow} isCancelling={isCancellingWorkflow} readOnly={!canEdit} onCancel={runWorkflowCancellation} /> : null}
+            <div className="grid gap-6 lg:grid-cols-[minmax(320px,420px)_1fr]">
+              <TicketUpload disabled={!canEdit} onUploaded={handleTicketsUploaded} />
+              <div className="rounded-lg border border-line bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">Structured Extraction</h2>
+                    <p className="text-sm text-slate-600">Run Ollama extraction and create clusters from pending tickets.</p>
+                  </div>
+                  <button className="inline-flex items-center justify-center gap-2 rounded bg-signal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400" type="button" onClick={runExtraction} disabled={!canEdit || isProcessing || ticketTotal === 0}>
+                    {isProcessing ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <WandSparkles size={16} aria-hidden="true" />}
+                    Process Tickets
+                  </button>
                 </div>
-                <button
-                  className="inline-flex items-center justify-center gap-2 rounded bg-signal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  type="button"
-                  onClick={runExtraction}
-                  disabled={!canEdit || isProcessing || ticketTotal === 0}
-                >
-                  {isProcessing ? (
-                    <Loader2 className="animate-spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <WandSparkles size={16} aria-hidden="true" />
-                  )}
-                  Process Tickets
-                </button>
               </div>
             </div>
-            <ClusterList
-              clusters={clusters}
-              selectedClusterId={selectedClusterId}
-              onSelectCluster={setSelectedClusterId}
-            />
-          </section>
-        </div>
+            <TicketTable tickets={tickets} />
+          </div>
+        ) : null}
 
-        <ClusterDetail
-          detail={clusterDetail}
-          isLoading={isClusterDetailLoading}
-          isRetrievingCode={isRetrievingCode}
-          isDraftingIssue={isDraftingIssue}
-          isApprovingIssue={isApprovingIssue}
-          readOnly={!canEdit}
-          onRetrieveCode={runCodeRetrieval}
-          onDraftIssue={runIssueDraft}
-          onApproveIssue={runIssueApproval}
-        />
+        {activeTab === "clusters" ? (
+          <div className="grid gap-6" role="tabpanel">
+            <TabHeading title="2. Review Clusters" description="Inspect grouped complaints, priority signals, confidence, and member tickets." />
+            <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+              <ClusterList clusters={clusters} selectedClusterId={selectedClusterId} onSelectCluster={setSelectedClusterId} />
+              <ClusterDetail mode="cluster" detail={clusterDetail} isLoading={isClusterDetailLoading} isRetrievingCode={isRetrievingCode} isDraftingIssue={isDraftingIssue} isApprovingIssue={isApprovingIssue} readOnly={!canEdit} onRetrieveCode={runCodeRetrieval} onDraftIssue={runIssueDraft} onApproveIssue={runIssueApproval} />
+            </div>
+          </div>
+        ) : null}
 
-        <CodebaseIndexPage readOnly={!canEdit} onStatusChange={setCodebaseStatus} />
+        {activeTab === "codebase" ? (
+          <div className="grid gap-6" role="tabpanel">
+            <TabHeading title="3. Index the Codebase" description="Build the project-specific code index used to retrieve evidence for clusters." />
+            <CodebaseIndexPage readOnly={!canEdit} onStatusChange={handleCodebaseStatusChange} />
+          </div>
+        ) : null}
 
-        <TicketTable tickets={tickets} />
+        {activeTab === "evidence" ? (
+          <div className="grid gap-6" role="tabpanel">
+            <TabHeading title="4. Retrieve Evidence and Draft Issues" description="Select a cluster, retrieve relevant code, draft an evidence-grounded issue, and approve it." />
+            <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+              <ClusterList clusters={clusters} selectedClusterId={selectedClusterId} onSelectCluster={setSelectedClusterId} />
+              <ClusterDetail mode="evidence" detail={clusterDetail} isLoading={isClusterDetailLoading} isRetrievingCode={isRetrievingCode} isDraftingIssue={isDraftingIssue} isApprovingIssue={isApprovingIssue} readOnly={!canEdit} onRetrieveCode={runCodeRetrieval} onDraftIssue={runIssueDraft} onApproveIssue={runIssueApproval} />
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
+  );
+}
+
+function TabHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-xl font-bold text-ink">{title}</h2>
+      <p className="mt-1 text-sm text-slate-600">{description}</p>
+    </div>
   );
 }
 
@@ -506,7 +579,9 @@ function WorkflowRunPanel({
     <section className="rounded-lg border border-line bg-white p-4 shadow-sm" aria-live="polite">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ticket workflow</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {workflow.workflow_type === "triage_pipeline" ? "Automated triage workflow" : "Ticket workflow"}
+          </div>
           <div className="mt-1 text-sm font-semibold text-ink">
             {formatStatus(workflow.current_step)} · attempt {workflow.attempt_count || 1}
           </div>

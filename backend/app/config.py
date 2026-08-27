@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     expensive_rate_limit_requests: int = 10
     expensive_rate_limit_window_seconds: int = 60
+    triage_batch_size: int = 20
+    triage_min_cluster_cohesion: float = 0.5
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -40,11 +40,20 @@ def list_tickets_for_cluster(db: Session, project_id: int, cluster_id: int) -> l
     return list(db.scalars(statement).all())
 
 
-def list_tickets_for_extraction(db: Session, project_id: int, limit: int = 50, force: bool = False) -> list[Ticket]:
+def list_tickets_for_extraction(db: Session, project_id: int, limit: int = 50, force: bool = False, include_failed: bool = True) -> list[Ticket]:
     statement = select(Ticket).where(Ticket.project_id == project_id).order_by(Ticket.created_at.desc(), Ticket.id.desc()).limit(limit)
     if not force:
-        statement = statement.where(Ticket.extraction_status != "completed")
+        statuses = ["pending", "stale"]
+        if include_failed:
+            statuses.append("failed")
+        statement = statement.where(Ticket.extraction_status.in_(statuses))
     return list(db.scalars(statement).all())
+
+
+def reset_project_extractions(db: Session, project_id: int) -> None:
+    for ticket in db.scalars(select(Ticket).where(Ticket.project_id == project_id)).all():
+        reset_ticket_extraction(ticket)
+    db.commit()
 
 
 def get_ticket_by_external_id(db: Session, project_id: int, external_ticket_id: str) -> Ticket | None:

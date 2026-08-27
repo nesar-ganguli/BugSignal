@@ -13,6 +13,8 @@ from app.repositories.workflow_repository import (
     get_active_workflow_run,
     get_workflow_run,
     mark_workflow_running,
+    pause_workflow_for_codebase,
+    requeue_workflow,
     update_workflow_progress,
 )
 from app.services.workflow_service import workflow_to_read
@@ -83,6 +85,25 @@ class WorkflowRepositoryTests(unittest.TestCase):
             self.assertEqual(stale.status, "failed")
             self.assertIn("stale execution timeout", stale.error_message)
             self.assertEqual(other.status, "queued")
+
+    def test_workflow_can_pause_for_codebase_and_resume(self) -> None:
+        with Session(self.engine) as db:
+            project = self.create_project(db, "pause")
+            workflow = create_workflow_run(db, project.id, "triage_pipeline", {})
+
+            pause_workflow_for_codebase(
+                db,
+                workflow,
+                {"status": "waiting_for_codebase", "clusters_created": 4},
+            )
+            self.assertEqual(workflow.status, "waiting_for_codebase")
+            self.assertEqual(workflow.current_step, "waiting_for_codebase")
+            self.assertEqual(workflow.progress_percent, 55)
+            self.assertEqual(get_active_workflow_run(db, project.id, "triage_pipeline").id, workflow.id)
+
+            requeue_workflow(db, workflow, "codebase_indexed")
+            self.assertEqual(workflow.status, "queued")
+            self.assertEqual(workflow.current_step, "codebase_indexed")
 
 
 if __name__ == "__main__":

@@ -141,6 +141,14 @@ celery -A app.celery_app.celery_app worker --loglevel=info --pool=solo --concurr
 Workflow state remains in the application database and is available through `GET /workflows` and
 `GET /workflows/{workflow_id}` even if the browser disconnects.
 
+Uploading a ticket CSV automatically starts the resumable triage pipeline. The worker extracts
+tickets in batches, rebuilds clusters once, and then pauses with `waiting_for_codebase` when the
+project has no indexed repository. Indexing the repository resumes that same workflow automatically:
+it retrieves code evidence and creates one issue draft for each supported cluster. A failure in one
+cluster is recorded without preventing the remaining clusters from being processed. Clusters marked
+for manual triage or below `TRIAGE_MIN_CLUSTER_COHESION` are skipped. Use `TRIAGE_BATCH_SIZE` to tune
+the extraction batch size for the available machine.
+
 ### Operational health and logging
 
 The API emits structured JSON request logs and returns an `X-Request-ID` header. Clients may send
